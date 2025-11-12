@@ -1,0 +1,16 @@
+# ========================================
+# LSAP - Markdown to PDF Converter
+# Python 相依套件清單
+# ========================================
+
+# 核心套件
+markdown>=3.5
+pdfkit>=1.0.0
+
+# Markdown 擴充套件
+pymdown-extensions>=10.0
+
+# 可選：進階功能
+pygments>=2.15.0          # 程式碼語法高亮
+# weasyprint>=60.0          # 替代 PDF 引擎 (不需 wkhtmltopdf)
+# pypandoc>=1.12            # Pandoc Python 介面

@@ -41,4 +41,8 @@ frontend/cypress/screenshots
 
 # Rathole proxy configuration
 rathole.toml
-frontend/.env
+
+# dev-env
+.cursorignore
+.condarc
+setup.md

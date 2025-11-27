@@ -7,7 +7,10 @@ import { z } from 'zod'
 
 export const UserInfoSchema = z
   .object({
-    username: z.string().describe("The user's username"),
+    username: z
+      .string()
+      .nullable()
+      .describe("The user's username. If null this is a guest."),
     displayName: z.string().describe('The display name of the user'),
     photoUrl: z
       .string()
@@ -17,4 +20,4 @@ export const UserInfoSchema = z
   })
   .describe('Represents the public information about a user')
 
-export type UserInfoDto = z.infer<typeof UserInfoSchema>
+export type UserInfoInterface = z.infer<typeof UserInfoSchema>

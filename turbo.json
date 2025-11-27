@@ -1,6 +1,8 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalPassThroughEnv": [
+    "NODE_ENV",
+    "DEBUG",
     "HD_*",
     "CADDY_HOST"
   ],
@@ -15,6 +17,14 @@
       ]
     },
     "@hedgedoc/commons#build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "dist/**"
+      ]
+    },
+    "@hedgedoc/database#build": {
       "dependsOn": [
         "^build"
       ],

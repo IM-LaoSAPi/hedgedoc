@@ -7,7 +7,7 @@ import type { NoteDetails } from './types'
 import { defaultNoteFrontmatter } from '@hedgedoc/commons'
 
 export const initialState: NoteDetails = {
-  updateUsername: null,
+  lastUpdatedBy: null,
   version: 0,
   markdownContent: {
     plain: '',
@@ -17,17 +17,15 @@ export const initialState: NoteDetails = {
   selection: { from: 0 },
   rawFrontmatter: '',
   startOfContentLineOffset: 0,
-  id: '',
-  createdAt: 0,
-  updatedAt: 0,
+  createdAt: '1970-01-01T00:00:00.000Z',
+  updatedAt: '1970-01-01T00:00:00.000Z',
   aliases: [],
-  primaryAddress: '',
+  primaryAlias: '',
   permissions: {
     owner: null,
     sharedToGroups: [],
     sharedToUsers: []
   },
-  viewCount: 0,
   editedBy: [],
   title: '',
   firstHeading: '',

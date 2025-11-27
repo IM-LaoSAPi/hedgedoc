@@ -5,34 +5,26 @@
  */
 import { HttpMethod, respondToMatchingRequest } from '../../../../handler-utils/respond-to-matching-request'
 import type { NextApiRequest, NextApiResponse } from 'next'
-import type { NoteDto } from '@hedgedoc/commons'
+import type { NoteInterface } from '@hedgedoc/commons'
 
 const handler = (req: NextApiRequest, res: NextApiResponse): void => {
-  respondToMatchingRequest<NoteDto>(
+  respondToMatchingRequest<NoteInterface>(
     HttpMethod.POST,
     req,
     res,
     {
       content: 'new note content',
       metadata: {
-        id: 'featuresId',
         version: 2,
-        viewCount: 0,
         updatedAt: '2021-04-24T09:27:51.000Z',
         createdAt: '2021-04-24T09:27:51.000Z',
-        updateUsername: null,
-        primaryAddress: 'features',
+        lastUpdatedBy: null,
+        primaryAlias: 'features',
         editedBy: [],
         title: 'New note',
         tags: ['hedgedoc', 'demo', 'react'],
         description: 'Many features, such wow!',
-        aliases: [
-          {
-            name: 'features',
-            primaryAlias: true,
-            noteId: 'featuresId'
-          }
-        ],
+        aliases: ['features'],
         permissions: {
           owner: 'tilman',
           sharedToUsers: [

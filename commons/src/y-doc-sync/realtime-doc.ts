@@ -3,8 +3,8 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { EventEmitter2 } from 'eventemitter2'
 import type { EventMap } from 'eventemitter2'
+import { EventEmitter2 } from 'eventemitter2'
 import {
   applyUpdate,
   Doc,
@@ -39,9 +39,9 @@ export class RealtimeDoc extends EventEmitter2<RealtimeDocEvents> {
    */
   constructor(initialTextContent?: string, initialYjsState?: number[]) {
     super()
-    if (initialYjsState) {
+    if (initialYjsState !== undefined) {
       this.applyUpdate(initialYjsState, this)
-    } else if (initialTextContent) {
+    } else if (initialTextContent !== undefined) {
       this.getMarkdownContentChannel().insert(0, initialTextContent)
     }
 
@@ -78,9 +78,10 @@ export class RealtimeDoc extends EventEmitter2<RealtimeDocEvents> {
    * @param encodedTargetStateVector The current state vector of the other y-doc. If provided the update will contain only the differences.
    */
   public encodeStateAsUpdate(encodedTargetStateVector?: number[]): number[] {
-    const update = encodedTargetStateVector
-      ? new Uint8Array(encodedTargetStateVector)
-      : undefined
+    const update =
+      encodedTargetStateVector !== undefined
+        ? new Uint8Array(encodedTargetStateVector)
+        : undefined
     return Array.from(encodeStateAsUpdate(this.doc, update))
   }
 

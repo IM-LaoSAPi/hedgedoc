@@ -3,17 +3,10 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import {
-  BrandingDto,
-  FrontendConfigDto,
-  ProviderType,
-  SpecialUrlDto,
-} from '@hedgedoc/commons';
-import { AuthProviderDto } from '@hedgedoc/commons';
+import { AuthProviderInterface, AuthProviderType } from '@hedgedoc/commons';
 import { Inject, Injectable } from '@nestjs/common';
 import { URL } from 'url';
 
-import appConfiguration, { AppConfig } from '../config/app.config';
 import authConfiguration, { AuthConfig } from '../config/auth.config';
 import customizationConfiguration, {
   CustomizationConfig,
@@ -22,15 +15,16 @@ import externalServicesConfiguration, {
   ExternalServicesConfig,
 } from '../config/external-services.config';
 import noteConfiguration, { NoteConfig } from '../config/note.config';
+import { BrandingDto } from '../dtos/branding.dto';
+import { FrontendConfigDto } from '../dtos/frontend-config.dto';
+import { SpecialUrlDto } from '../dtos/special-urls.dto';
 import { ConsoleLoggerService } from '../logger/console-logger.service';
-import { getServerVersionFromPackageJson } from '../utils/serverVersion';
+import { getServerVersionFromPackageJson } from '../utils/server-version';
 
 @Injectable()
 export class FrontendConfigService {
   constructor(
     private readonly logger: ConsoleLoggerService,
-    @Inject(appConfiguration.KEY)
-    private appConfig: AppConfig,
     @Inject(noteConfiguration.KEY)
     private noteConfig: NoteConfig,
     @Inject(authConfiguration.KEY)
@@ -43,9 +37,14 @@ export class FrontendConfigService {
     this.logger.setContext(FrontendConfigService.name);
   }
 
+  /**
+   * Returns the config options for the frontend
+   *
+   * @returns A frontend config DTO
+   */
   async getFrontendConfig(): Promise<FrontendConfigDto> {
-    return {
-      guestAccess: this.noteConfig.guestAccess,
+    return FrontendConfigDto.create({
+      guestAccess: this.noteConfig.permissions.maxGuestLevel,
       allowRegister: this.authConfig.local.enableRegister,
       allowProfileEdits: this.authConfig.common.allowProfileEdits,
       allowChooseUsername: this.authConfig.common.allowChooseUsername,
@@ -58,19 +57,24 @@ export class FrontendConfigService {
       specialUrls: this.getSpecialUrls(),
       useImageProxy: !!this.externalServicesConfig.imageProxy,
       version: await getServerVersionFromPackageJson(),
-    };
+    });
   }
 
-  private getAuthProviders(): AuthProviderDto[] {
-    const providers: AuthProviderDto[] = [];
+  /**
+   * Reads the auth providers from the config and returns them
+   *
+   * @returns An array of auth provider DTOs
+   */
+  private getAuthProviders(): AuthProviderInterface[] {
+    const providers: AuthProviderInterface[] = [];
     if (this.authConfig.local.enableLogin) {
       providers.push({
-        type: ProviderType.LOCAL,
+        type: AuthProviderType.LOCAL,
       });
     }
     this.authConfig.ldap.forEach((ldapEntry) => {
       providers.push({
-        type: ProviderType.LDAP,
+        type: AuthProviderType.LDAP,
         providerName: ldapEntry.providerName,
         identifier: ldapEntry.identifier,
         theme: null,
@@ -78,7 +82,7 @@ export class FrontendConfigService {
     });
     this.authConfig.oidc.forEach((openidConnectEntry) => {
       providers.push({
-        type: ProviderType.OIDC,
+        type: AuthProviderType.OIDC,
         providerName: openidConnectEntry.providerName,
         identifier: openidConnectEntry.identifier,
         theme: openidConnectEntry.theme ?? null,
@@ -87,17 +91,27 @@ export class FrontendConfigService {
     return providers;
   }
 
+  /**
+   * Reads the branding from the config and returns it
+   *
+   * @returns A branding DTO
+   */
   private getBranding(): BrandingDto {
-    return {
+    return BrandingDto.create({
       logo: this.customizationConfig.branding.customLogo
         ? new URL(this.customizationConfig.branding.customLogo).toString()
         : null,
       name: this.customizationConfig.branding.customName,
-    };
+    });
   }
 
+  /**
+   * Reads the special URLs like imprint or privacy policy from the config and returns them
+   *
+   * @returns A special URL DTO
+   */
   private getSpecialUrls(): SpecialUrlDto {
-    return {
+    return SpecialUrlDto.create({
       imprint: this.customizationConfig.specialUrls.imprint
         ? new URL(this.customizationConfig.specialUrls.imprint).toString()
         : null,
@@ -107,6 +121,6 @@ export class FrontendConfigService {
       termsOfUse: this.customizationConfig.specialUrls.termsOfUse
         ? new URL(this.customizationConfig.specialUrls.termsOfUse).toString()
         : null,
-    };
+    });
   }
 }

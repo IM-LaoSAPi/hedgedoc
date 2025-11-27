@@ -16,7 +16,7 @@ export const MediaUploadSchema = z
       .describe('The note id to which the uploaded file is linked to'),
     createdAt: z
       .string()
-      .datetime()
+      .datetime({ offset: false, local: false })
       .describe('The dater when the upload was created'),
     username: z
       .string()
@@ -25,4 +25,4 @@ export const MediaUploadSchema = z
   })
   .describe('Metadata for an uploaded file')
 
-export type MediaUploadDto = z.infer<typeof MediaUploadSchema>
+export type MediaUploadInterface = z.infer<typeof MediaUploadSchema>

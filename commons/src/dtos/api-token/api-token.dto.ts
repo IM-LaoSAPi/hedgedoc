@@ -10,14 +10,17 @@ export const ApiTokenSchema = z
   .object({
     label: z.string().describe('The label of the token'),
     keyId: z.string().describe('The id of the token'),
-    createdAt: z.string().datetime().describe('When this token was created'),
+    createdAt: z
+      .string()
+      .datetime({ offset: false, local: false })
+      .describe('When this token was created'),
     validUntil: z
       .string()
-      .datetime()
-      .describe('How long this token is valid fro'),
+      .datetime({ offset: false, local: false })
+      .describe('How long this token is valid for'),
     lastUsedAt: z
       .string()
-      .datetime()
+      .datetime({ offset: false, local: false })
       .nullable()
       .describe('When this token was last used'),
   })
@@ -25,4 +28,4 @@ export const ApiTokenSchema = z
     'Represents an access token for the public API. Each API token is bound to a user account. A user can have multiple API tokens.',
   )
 
-export type ApiTokenDto = z.infer<typeof ApiTokenSchema>
+export type ApiTokenInterface = z.infer<typeof ApiTokenSchema>

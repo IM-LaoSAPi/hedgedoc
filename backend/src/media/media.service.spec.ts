@@ -1,434 +1,363 @@
 /*
- * SPDX-FileCopyrightText: 2024 The HedgeDoc developers (see AUTHORS file)
+ * SPDX-FileCopyrightText: 2025 The HedgeDoc developers (see AUTHORS file)
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+import {
+  FieldNameAlias,
+  FieldNameMediaUpload,
+  FieldNameUser,
+  MediaBackendType,
+  TableAlias,
+  TableMediaUpload,
+  TableUser,
+} from '@hedgedoc/database';
+import { Provider } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { EventEmitterModule } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { promises as fs } from 'fs';
-import { Repository } from 'typeorm';
+import * as fileTypeModule from 'file-type';
+import type { Tracker } from 'knex-mock-client';
+import * as uuidModule from 'uuid';
 
-import appConfigMock from '../../src/config/mock/app.config.mock';
-import { ApiToken } from '../api-token/api-token.entity';
-import { Identity } from '../auth/identity.entity';
-import { Author } from '../authors/author.entity';
-import authConfigMock from '../config/mock/auth.config.mock';
+import appConfigMock from '../config/mock/app.config.mock';
 import databaseConfigMock from '../config/mock/database.config.mock';
 import mediaConfigMock from '../config/mock/media.config.mock';
-import noteConfigMock from '../config/mock/note.config.mock';
+import { expectBindings } from '../database/mock/expect-bindings';
+import {
+  mockDelete,
+  mockInsert,
+  mockSelect,
+  mockUpdate,
+} from '../database/mock/mock-queries';
+import { mockKnexDb } from '../database/mock/provider';
 import { ClientError, NotInDBError } from '../errors/errors';
-import { eventModuleConfig } from '../events';
-import { Group } from '../groups/group.entity';
 import { LoggerModule } from '../logger/logger.module';
-import { Alias } from '../notes/alias.entity';
-import { Note } from '../notes/note.entity';
-import { NotesModule } from '../notes/notes.module';
-import { Tag } from '../notes/tag.entity';
-import { NoteGroupPermission } from '../permissions/note-group-permission.entity';
-import { NoteUserPermission } from '../permissions/note-user-permission.entity';
-import { Edit } from '../revisions/edit.entity';
-import { Revision } from '../revisions/revision.entity';
-import { Session } from '../sessions/session.entity';
-import { User } from '../users/user.entity';
-import { UsersModule } from '../users/users.module';
-import { BackendType } from './backends/backend-type.enum';
 import { FilesystemBackend } from './backends/filesystem-backend';
-import { MediaUpload } from './media-upload.entity';
 import { MediaService } from './media.service';
 
+jest.mock('file-type');
+jest.mock('uuid');
+
 describe('MediaService', () => {
+  const userId = 1;
+  const noteId = 2;
+  const uuid = '0198c9b6-117f-7215-93e2-5ca4b718225f';
+  const fileName = 'test.png';
+  const backendType = MediaBackendType.FILESYSTEM;
+  const backendData = JSON.stringify({ ext: 'png' });
+  const fileBuffer = Buffer.from('test');
+  const username = 'testuser';
+  const alias = 'note-alias';
+  const createdAt = '2025-11-05 20:39:25';
+  const createdAtIso = '2025-11-05T20:39:25.000Z';
+
   let service: MediaService;
-  let noteRepo: Repository<Note>;
-  let userRepo: Repository<User>;
-  let mediaRepo: Repository<MediaUpload>;
+  let fileSystemBackend: FilesystemBackend;
+  let tracker: Tracker;
+  let knexProvider: Provider;
 
-  class CreateQueryBuilderClass {
-    leftJoinAndSelect: () => CreateQueryBuilderClass;
-    where: () => CreateQueryBuilderClass;
-    orWhere: () => CreateQueryBuilderClass;
-    setParameter: () => CreateQueryBuilderClass;
-    getOne: () => MediaUpload;
-    getMany: () => MediaUpload[];
-  }
+  beforeAll(async () => {
+    [tracker, knexProvider] = mockKnexDb();
 
-  let createQueryBuilderFunc: CreateQueryBuilderClass;
-
-  beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        MediaService,
-        {
-          provide: getRepositoryToken(MediaUpload),
-          useClass: Repository,
-        },
-        FilesystemBackend,
-      ],
+      providers: [MediaService, knexProvider, FilesystemBackend],
       imports: [
-        ConfigModule.forRoot({
-          isGlobal: true,
-          load: [
-            mediaConfigMock,
-            appConfigMock,
-            databaseConfigMock,
-            authConfigMock,
-            noteConfigMock,
-          ],
-        }),
         LoggerModule,
-        NotesModule,
-        UsersModule,
-        EventEmitterModule.forRoot(eventModuleConfig),
+        await ConfigModule.forRoot({
+          isGlobal: true,
+          load: [appConfigMock, databaseConfigMock, mediaConfigMock],
+        }),
       ],
-    })
-      .overrideProvider(getRepositoryToken(Edit))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(ApiToken))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(Identity))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(Note))
-      .useClass(Repository)
-      .overrideProvider(getRepositoryToken(Revision))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(User))
-      .useClass(Repository)
-      .overrideProvider(getRepositoryToken(Tag))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(NoteGroupPermission))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(NoteUserPermission))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(MediaUpload))
-      .useClass(Repository)
-      .overrideProvider(getRepositoryToken(Group))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(Session))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(Author))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(Alias))
-      .useValue({})
-      .compile();
+    }).compile();
 
     service = module.get<MediaService>(MediaService);
-    noteRepo = module.get<Repository<Note>>(getRepositoryToken(Note));
-    userRepo = module.get<Repository<User>>(getRepositoryToken(User));
-    mediaRepo = module.get<Repository<MediaUpload>>(
-      getRepositoryToken(MediaUpload),
-    );
-
-    const user = User.create('test123', 'Test 123') as User;
-    const uuid = 'f7d334bb-6bb6-451b-9334-bb6bb6d51b5a';
-    const filename = 'test.jpg';
-    const note = Note.create(user) as Note;
-    const mediaUpload = MediaUpload.create(
-      uuid,
-      filename,
-      note,
-      user,
-      BackendType.FILESYSTEM,
-      null,
-    ) as MediaUpload;
-
-    const createQueryBuilder = {
-      leftJoinAndSelect: () => createQueryBuilder,
-      where: () => createQueryBuilder,
-      orWhere: () => createQueryBuilder,
-      setParameter: () => createQueryBuilder,
-      getOne: () => mediaUpload,
-      getMany: () => [mediaUpload],
-    };
-    createQueryBuilderFunc = createQueryBuilder;
-    jest
-      .spyOn(mediaRepo, 'createQueryBuilder')
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      .mockImplementation(() => createQueryBuilder);
+    fileSystemBackend = module.get<FilesystemBackend>(FilesystemBackend);
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+  afterEach(() => {
+    tracker.reset();
+    jest.clearAllMocks();
+  });
+
+  describe('isAllowedMimeType', () => {
+    // ToDo: Add this test later
+    // This is currently so trivial it isn't really worth it.
   });
 
   describe('saveFile', () => {
-    let user: User;
-    let note: Note;
-    beforeEach(() => {
-      user = User.create('hardcoded', 'Testy') as User;
-      const alias = 'alias';
-      note = Note.create(user, alias) as Note;
-      jest.spyOn(userRepo, 'findOne').mockResolvedValueOnce(user);
-      const createQueryBuilder = {
-        leftJoinAndSelect: () => createQueryBuilder,
-        where: () => createQueryBuilder,
-        orWhere: () => createQueryBuilder,
-        setParameter: () => createQueryBuilder,
-        getOne: () => note,
-      };
+    it('inserts a new media upload and returns uuid', async () => {
       jest
-        .spyOn(noteRepo, 'createQueryBuilder')
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        .mockImplementation(() => createQueryBuilder);
-    });
-
-    it('works', async () => {
-      const testImage = await fs.readFile('test/public-api/fixtures/test.png');
-      let givenUuid = '';
-      jest.spyOn(mediaRepo, 'save').mockImplementation();
+        .spyOn(fileTypeModule, 'fromBuffer')
+        .mockResolvedValue({ mime: 'image/png', ext: 'png' });
+      // This invalid Uint8Array typecast is required as TypeScript does not accept
+      // that uuid.v7 can return either a string or Uint8Array based on the options.
+      jest
+        .spyOn(uuidModule, 'v7')
+        .mockReturnValue(uuid as unknown as Uint8Array);
+      mockInsert(
+        tracker,
+        TableMediaUpload,
+        [
+          FieldNameMediaUpload.backendData,
+          FieldNameMediaUpload.backendType,
+          FieldNameMediaUpload.fileName,
+          FieldNameMediaUpload.noteId,
+          FieldNameMediaUpload.userId,
+          FieldNameMediaUpload.uuid,
+        ],
+        [{ [FieldNameMediaUpload.uuid]: uuid }],
+      );
       jest
         .spyOn(service.mediaBackend, 'saveFile')
         .mockImplementationOnce(
-          async (uuid: string, buffer: Buffer): Promise<string | null> => {
-            expect(buffer).toEqual(testImage);
-            givenUuid = uuid;
-            return null;
+          async (
+            givenUuid: string,
+            buffer: Buffer,
+            fileType?: fileTypeModule.FileTypeResult,
+          ): Promise<string | null> => {
+            expect(givenUuid).toBe(uuid);
+            expect(buffer).toEqual(fileBuffer);
+            expect(fileType).toBeDefined();
+            expect(fileType!.ext).toEqual('png');
+            return JSON.stringify({ ext: fileType!.ext });
           },
         );
-      jest.spyOn(mediaRepo, 'save').mockImplementationOnce(async (entry) => {
-        expect(entry.uuid).toEqual(givenUuid);
-        return entry as MediaUpload;
-      });
-      const upload = await service.saveFile('test.jpg', testImage, user, note);
-      expect(upload.fileName).toEqual('test.jpg');
-      expect(upload.uuid).toEqual(givenUuid);
-      await expect(upload.note).resolves.toEqual(note);
-      await expect(upload.user).resolves.toEqual(user);
+      const result = await service.saveFile(
+        fileName,
+        fileBuffer,
+        userId,
+        noteId,
+      );
+      expect(result).toBe(uuid);
+      expectBindings(tracker, 'insert', [
+        [backendData, backendType, fileName, noteId, userId, uuid],
+      ]);
     });
 
-    describe('fails:', () => {
-      it('MIME type not identifiable', async () => {
-        await expect(
-          service.saveFile('fail.png', Buffer.alloc(1), user, note),
-        ).rejects.toThrow(ClientError);
-      });
+    it('throws ClientError if file type is not detected', async () => {
+      jest.spyOn(fileTypeModule, 'fromBuffer').mockResolvedValue(undefined);
+      await expect(
+        service.saveFile(fileName, fileBuffer, userId, noteId),
+      ).rejects.toThrow(ClientError);
+    });
 
-      it('MIME type not supported', async () => {
-        const testText = await fs.readFile('test/public-api/fixtures/test.zip');
-        await expect(
-          service.saveFile('fail.zip', testText, user, note),
-        ).rejects.toThrow(ClientError);
+    it('throws ClientError if mime type is not allowed', async () => {
+      jest.spyOn(fileTypeModule, 'fromBuffer').mockResolvedValue({
+        // correct MIME type for Windows exe would be
+        // application/vnd.microsoft.portable-executable according to IANA,
+        // but file-type detects it as the following
+        mime: 'application/x-msdownload',
+        ext: 'exe',
       });
+      await expect(
+        service.saveFile(fileName, fileBuffer, userId, noteId),
+      ).rejects.toThrow(ClientError);
     });
   });
 
   describe('deleteFile', () => {
-    it('works', async () => {
-      const mockMediaUploadEntry = {
-        uuid: '64f260cc-e0d0-47e7-b260-cce0d097e767',
-        fileName: 'testFileName',
-        note: Promise.resolve({
-          id: 123,
-        } as Note),
-        backendType: BackendType.FILESYSTEM,
-        backendData: 'testBackendData',
-        user: Promise.resolve({
-          username: 'hardcoded',
-        } as User),
-      } as MediaUpload;
+    it('deletes a file if found', async () => {
+      mockSelect(
+        tracker,
+        [FieldNameMediaUpload.backendData],
+        TableMediaUpload,
+        FieldNameMediaUpload.uuid,
+        { [FieldNameMediaUpload.backendData]: backendData },
+      );
+      mockDelete(tracker, TableMediaUpload, [FieldNameMediaUpload.uuid]);
       jest
         .spyOn(service.mediaBackend, 'deleteFile')
         .mockImplementationOnce(
-          async (uuid: string, backendData: string | null): Promise<void> => {
-            expect(uuid).toEqual(mockMediaUploadEntry.uuid);
-            expect(backendData).toEqual(mockMediaUploadEntry.backendData);
+          async (givenUuid: string, givenBackendData: string | null) => {
+            expect(givenUuid).toBe(uuid);
+            expect(givenBackendData).toBe(backendData);
           },
         );
-      jest
-        .spyOn(mediaRepo, 'remove')
-        .mockImplementationOnce(async (entry, _) => {
-          expect(entry).toEqual(mockMediaUploadEntry);
-          return entry;
-        });
-      await service.deleteFile(mockMediaUploadEntry);
+      await service.deleteFile(uuid);
+      expectBindings(tracker, 'select', [[uuid]], true);
+      expectBindings(tracker, 'delete', [[uuid]]);
+    });
+
+    it('throws NotInDBError if file not found', async () => {
+      mockSelect(
+        tracker,
+        [FieldNameMediaUpload.backendData],
+        TableMediaUpload,
+        FieldNameMediaUpload.uuid,
+        undefined,
+      );
+      await expect(service.deleteFile(uuid)).rejects.toThrow(NotInDBError);
+      expectBindings(tracker, 'select', [[uuid]], true);
     });
   });
 
   describe('getFileUrl', () => {
-    it('works', async () => {
-      const mockMediaUploadEntry = {
-        uuid: '64f260cc-e0d0-47e7-b260-cce0d097e767',
-        fileName: 'testFileName',
-        note: Promise.resolve({
-          id: 123,
-        } as Note),
-        backendType: BackendType.FILESYSTEM,
-        backendData: '{"ext": "png"}',
-        user: Promise.resolve({
-          username: 'hardcoded',
-        } as User),
-      } as MediaUpload;
-      await expect(service.getFileUrl(mockMediaUploadEntry)).resolves.toEqual(
-        '/uploads/64f260cc-e0d0-47e7-b260-cce0d097e767.png',
+    it('returns file url if found', async () => {
+      mockSelect(
+        tracker,
+        [FieldNameMediaUpload.backendType, FieldNameMediaUpload.backendData],
+        TableMediaUpload,
+        FieldNameMediaUpload.uuid,
+        {
+          [FieldNameMediaUpload.backendType]: backendType,
+          [FieldNameMediaUpload.backendData]: backendData,
+        },
       );
+      // As the media service loads the used backend dynamically, we need to
+      // spy on fileSystemBackend here instead of service.mediaBackend
+      jest
+        .spyOn(fileSystemBackend, 'getFileUrl')
+        .mockImplementationOnce(
+          async (
+            givenUuid: string,
+            givenBackendData: string | null,
+          ): Promise<string> => {
+            expect(givenUuid).toBe(uuid);
+            expect(givenBackendData).toBe(backendData);
+            return `http://example.com/${fileName}`;
+          },
+        );
+      const result = await service.getFileUrl(uuid);
+      expect(result).toBe(`http://example.com/${fileName}`);
+      expectBindings(tracker, 'select', [[uuid]], true);
+    });
+
+    it('throws NotInDBError if not found', async () => {
+      mockSelect(
+        tracker,
+        [FieldNameMediaUpload.backendType, FieldNameMediaUpload.backendData],
+        TableMediaUpload,
+        FieldNameMediaUpload.uuid,
+        undefined,
+      );
+      await expect(service.getFileUrl(uuid)).rejects.toThrow(NotInDBError);
+      expectBindings(tracker, 'select', [[uuid]], true);
     });
   });
 
-  describe('findUploadByFilename', () => {
-    it('works', async () => {
-      const testFileName = 'testFilename';
-      const username = 'hardcoded';
-      const backendData = 'testBackendData';
-      const mockMediaUploadEntry = {
-        uuid: '64f260cc-e0d0-47e7-b260-cce0d097e767',
-        fileName: testFileName,
-        note: Promise.resolve({
-          id: 123,
-        } as Note),
-        backendType: BackendType.FILESYSTEM,
-        backendData,
-        user: Promise.resolve({
-          username,
-        } as User),
-      } as MediaUpload;
-      jest
-        .spyOn(mediaRepo, 'findOne')
-        .mockResolvedValueOnce(mockMediaUploadEntry);
-      const mediaUpload = await service.findUploadByFilename(testFileName);
-      expect((await mediaUpload.user)?.username).toEqual(username);
-      expect(mediaUpload.backendData).toEqual(backendData);
+  describe('findUploadByUuid', () => {
+    it('returns media upload if found', async () => {
+      const row = { [FieldNameMediaUpload.uuid]: uuid };
+      mockSelect(tracker, [], TableMediaUpload, FieldNameMediaUpload.uuid, row);
+      const result = await service.findUploadByUuid(uuid);
+      expect(result).toEqual(row);
+      expectBindings(tracker, 'select', [[uuid]], true);
     });
-    it("fails: can't find mediaUpload", async () => {
-      const testFileName = 'testFilename';
-      jest.spyOn(mediaRepo, 'findOne').mockResolvedValueOnce(null);
-      await expect(service.findUploadByFilename(testFileName)).rejects.toThrow(
+
+    it('throws NotInDBError if not found', async () => {
+      mockSelect(
+        tracker,
+        [],
+        TableMediaUpload,
+        FieldNameMediaUpload.uuid,
+        undefined,
+      );
+      await expect(service.findUploadByUuid(uuid)).rejects.toThrow(
         NotInDBError,
       );
+      expectBindings(tracker, 'select', [[uuid]], true);
     });
   });
 
-  describe('listUploadsByUser', () => {
-    describe('works', () => {
-      const username = 'hardcoded';
-      it('with one upload from user', async () => {
-        const mockMediaUploadEntry = {
-          uuid: '64f260cc-e0d0-47e7-b260-cce0d097e767',
-          fileName: 'testFileName',
-          note: Promise.resolve({
-            id: 123,
-          } as Note),
-          backendType: BackendType.FILESYSTEM,
-          backendData: null,
-          user: Promise.resolve({
-            username,
-          } as User),
-        } as MediaUpload;
-        createQueryBuilderFunc.getMany = () => [mockMediaUploadEntry];
-        expect(
-          await service.listUploadsByUser({ username: 'hardcoded' } as User),
-        ).toEqual([mockMediaUploadEntry]);
-      });
-
-      it('without uploads from user', async () => {
-        createQueryBuilderFunc.getMany = () => [];
-        const mediaList = await service.listUploadsByUser({
-          username: username,
-        } as User);
-        expect(mediaList).toEqual([]);
-      });
-      it('with error (null as return value of find)', async () => {
-        createQueryBuilderFunc.getMany = () => [];
-        const mediaList = await service.listUploadsByUser({
-          username: username,
-        } as User);
-        expect(mediaList).toEqual([]);
-      });
+  describe('getMediaUploadUuidsByUserId', () => {
+    it('returns uuids for user', async () => {
+      const rows = [{ [FieldNameMediaUpload.uuid]: uuid }];
+      mockSelect(
+        tracker,
+        [FieldNameMediaUpload.uuid],
+        TableMediaUpload,
+        FieldNameMediaUpload.userId,
+        rows,
+      );
+      const result = await service.getMediaUploadUuidsByUserId(userId);
+      expect(result).toEqual([uuid]);
+      expectBindings(tracker, 'select', [[userId]], false);
     });
   });
 
-  describe('listUploadsByNote', () => {
-    describe('works', () => {
-      it('with one upload to note', async () => {
-        const mockMediaUploadEntry = {
-          uuid: '64f260cc-e0d0-47e7-b260-cce0d097e767',
-          fileName: 'testFileName',
-          note: Promise.resolve({
-            id: 123,
-          } as Note),
-          backendType: BackendType.FILESYSTEM,
-          backendData: null,
-          user: Promise.resolve({
-            username: 'mockUser',
-          } as User),
-        } as MediaUpload;
-        const createQueryBuilder = {
-          where: () => createQueryBuilder,
-          getMany: async () => {
-            return [mockMediaUploadEntry];
-          },
-        };
-        jest
-          .spyOn(mediaRepo, 'createQueryBuilder')
-          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore
-          .mockImplementation(() => createQueryBuilder);
-        const mediaList = await service.listUploadsByNote({
-          id: 123,
-        } as Note);
-        expect(mediaList).toEqual([mockMediaUploadEntry]);
-      });
-
-      it('without uploads to note', async () => {
-        const createQueryBuilder = {
-          where: () => createQueryBuilder,
-          getMany: async () => {
-            return [];
-          },
-        };
-        jest
-          .spyOn(mediaRepo, 'createQueryBuilder')
-          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore
-          .mockImplementation(() => createQueryBuilder);
-        const mediaList = await service.listUploadsByNote({
-          id: 123,
-        } as Note);
-        expect(mediaList).toEqual([]);
-      });
-      it('with error (null as return value of find)', async () => {
-        const createQueryBuilder = {
-          where: () => createQueryBuilder,
-          getMany: async () => {
-            return null;
-          },
-        };
-        jest
-          .spyOn(mediaRepo, 'createQueryBuilder')
-          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore
-          .mockImplementation(() => createQueryBuilder);
-        const mediaList = await service.listUploadsByNote({
-          id: 123,
-        } as Note);
-        expect(mediaList).toEqual([]);
-      });
+  describe('getMediaUploadUuidsByNoteId', () => {
+    it('returns uuids for note', async () => {
+      const rows = [{ [FieldNameMediaUpload.uuid]: uuid }];
+      mockSelect(
+        tracker,
+        [FieldNameMediaUpload.uuid],
+        TableMediaUpload,
+        FieldNameMediaUpload.noteId,
+        rows,
+      );
+      const result = await service.getMediaUploadUuidsByNoteId(noteId);
+      expect(result).toEqual([uuid]);
     });
   });
 
   describe('removeNoteFromMediaUpload', () => {
-    it('works', async () => {
-      const mockNote = {} as Note;
-      mockNote.aliases = Promise.resolve([
-        Alias.create('test', mockNote, true) as Alias,
+    it('updates noteId to null', async () => {
+      mockUpdate(
+        tracker,
+        TableMediaUpload,
+        [FieldNameMediaUpload.noteId],
+        FieldNameMediaUpload.uuid,
+      );
+      await service.removeNoteFromMediaUpload(uuid);
+      expectBindings(tracker, 'update', [[null, uuid]]);
+    });
+  });
+
+  describe('chooseBackendType', () => {
+    // ToDo: Add this test later
+    // This is currently so trivial it isn't really worth it.
+  });
+
+  describe('getBackendFromType', () => {
+    // ToDo: Add this test later
+    // This is currently so trivial it isn't really worth it.
+  });
+
+  describe('getMediaUploadDtosByUuids', () => {
+    it('returns media upload dtos', async () => {
+      const rows = [
+        {
+          [FieldNameMediaUpload.uuid]: uuid,
+          [FieldNameMediaUpload.fileName]: fileName,
+          [FieldNameMediaUpload.createdAt]: createdAt,
+          [FieldNameUser.username]: username,
+          [FieldNameAlias.alias]: alias,
+        },
+      ];
+      mockSelect(
+        tracker,
+        [
+          `${TableMediaUpload}"."${FieldNameMediaUpload.uuid}`,
+          `${TableMediaUpload}"."${FieldNameMediaUpload.fileName}`,
+          `${TableMediaUpload}"."${FieldNameMediaUpload.createdAt}`,
+          `${TableUser}"."${FieldNameUser.username}`,
+          `${TableAlias}"."${FieldNameAlias.alias}`,
+        ],
+        TableMediaUpload,
+        FieldNameMediaUpload.uuid,
+        rows,
+        [
+          {
+            joinTable: TableAlias,
+            keyLeft: FieldNameAlias.noteId,
+          },
+          {
+            joinTable: TableUser,
+            keyLeft: FieldNameUser.id,
+            keyRight: FieldNameMediaUpload.userId,
+          },
+        ],
+      );
+      const result = await service.getMediaUploadDtosByUuids([uuid]);
+      expect(result).toEqual([
+        {
+          uuid,
+          fileName,
+          noteId: alias,
+          createdAt: createdAtIso,
+          username,
+        },
       ]);
-      const mockMediaUploadEntry = {
-        uuid: '64f260cc-e0d0-47e7-b260-cce0d097e767',
-        fileName: 'testFileName',
-        note: mockNote,
-        backendType: BackendType.FILESYSTEM,
-        backendData: null,
-        user: Promise.resolve({
-          username: 'mockUser',
-        } as User),
-      } as unknown as MediaUpload;
-      jest.spyOn(mediaRepo, 'save').mockImplementationOnce(async (entry) => {
-        expect(await entry.note).toBeNull();
-        return entry as MediaUpload;
-      });
-      await service.removeNoteFromMediaUpload(mockMediaUploadEntry);
-      expect(mediaRepo.save).toHaveBeenCalled();
     });
   });
 });

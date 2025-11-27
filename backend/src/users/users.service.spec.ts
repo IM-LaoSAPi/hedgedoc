@@ -3,165 +3,225 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+import { FieldNameUser, TableUser } from '@hedgedoc/database';
+import { BadRequestException, Provider } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import type { Tracker } from 'knex-mock-client';
+import * as uuidModule from 'uuid';
 
 import appConfigMock from '../config/mock/app.config.mock';
-import authConfigMock from '../config/mock/auth.config.mock';
-import { AlreadyInDBError, NotInDBError } from '../errors/errors';
+import databaseConfigMock from '../config/mock/database.config.mock';
+import { expectBindings } from '../database/mock/expect-bindings';
+import {
+  mockDelete,
+  mockInsert,
+  mockUpdate,
+} from '../database/mock/mock-queries';
+import { mockKnexDb } from '../database/mock/provider';
+import { GenericDBError, NotInDBError } from '../errors/errors';
 import { LoggerModule } from '../logger/logger.module';
-import { User } from './user.entity';
 import { UsersService } from './users.service';
 
-describe('UsersService', () => {
-  let service: UsersService;
-  let userRepo: Repository<User>;
+jest.mock('uuid');
 
-  beforeEach(async () => {
+describe('UsersService', () => {
+  const username = 'testuser';
+  const displayName = 'Test User';
+  const email = 'test@example.com';
+  const photoUrl = 'https://example.com/photo.png';
+  const userId = 123;
+  const guestUuid = 'a5fdd770-4bff-4baa-bdd7-704bff7baa3c';
+
+  let service: UsersService;
+  let tracker: Tracker;
+  let knexProvider: Provider;
+
+  beforeAll(async () => {
+    [tracker, knexProvider] = mockKnexDb();
+
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        UsersService,
-        {
-          provide: getRepositoryToken(User),
-          useClass: Repository,
-        },
-      ],
+      providers: [UsersService, knexProvider],
       imports: [
-        ConfigModule.forRoot({
-          isGlobal: true,
-          load: [appConfigMock, authConfigMock],
-        }),
         LoggerModule,
+        await ConfigModule.forRoot({
+          isGlobal: true,
+          load: [appConfigMock, databaseConfigMock],
+        }),
       ],
     }).compile();
 
     service = module.get<UsersService>(UsersService);
-    userRepo = module.get<Repository<User>>(getRepositoryToken(User));
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+  afterEach(() => {
+    tracker.reset();
   });
 
   describe('createUser', () => {
-    const username = 'hardcoded';
-    const displayname = 'Testy';
-    beforeEach(() => {
-      jest
-        .spyOn(userRepo, 'save')
-        .mockImplementationOnce(async (user: User): Promise<User> => user);
+    it('throws BadRequestException if the username is not valid', async () => {
+      const wrongUsername = 'not=valid,!$?';
+      await expect(() =>
+        service.createUser(wrongUsername, displayName, email, photoUrl),
+      ).rejects.toThrow(BadRequestException);
     });
-    it('successfully creates a user', async () => {
-      const user = await service.createUser(username, displayname, null, null);
-      expect(user.username).toEqual(username);
-      expect(user.displayName).toEqual(displayname);
+
+    it('inserts a new user', async () => {
+      mockInsert(
+        tracker,
+        TableUser,
+        [
+          FieldNameUser.authorStyle,
+          FieldNameUser.displayName,
+          FieldNameUser.email,
+          FieldNameUser.guestUuid,
+          FieldNameUser.photoUrl,
+          FieldNameUser.username,
+        ],
+        [{ [FieldNameUser.id]: userId }],
+      );
+      const result = await service.createUser(
+        username,
+        displayName,
+        email,
+        photoUrl,
+      );
+      expect(result).toBe(userId);
+      expectBindings(tracker, 'insert', [
+        [expect.any(Number), displayName, email, null, photoUrl, username],
+      ]);
     });
-    it('fails if username is already taken', async () => {
-      // add additional mock implementation for failure
-      jest.spyOn(userRepo, 'save').mockImplementationOnce(() => {
-        throw new Error();
-      });
-      // create first user with username
-      await service.createUser(username, displayname, null, null);
-      // attempt to create second user with username
+
+    it('throws GenericDBError if insert fails', async () => {
+      mockInsert(
+        tracker,
+        TableUser,
+        [
+          FieldNameUser.authorStyle,
+          FieldNameUser.displayName,
+          FieldNameUser.email,
+          FieldNameUser.guestUuid,
+          FieldNameUser.photoUrl,
+          FieldNameUser.username,
+        ],
+        [],
+      );
       await expect(
-        service.createUser(username, displayname, null, null),
-      ).rejects.toThrow(AlreadyInDBError);
+        service.createUser(username, displayName, email, photoUrl),
+      ).rejects.toThrow(GenericDBError);
+    });
+  });
+
+  describe('createGuestUser', () => {
+    it('inserts a new guest user', async () => {
+      // This wrong typecast is required since TypeScript does not see that
+      // `uuid.v4()` returns a string or a Uint8Array based on the given options
+      jest
+        .spyOn(uuidModule, 'v4')
+        .mockReturnValue(guestUuid as unknown as Uint8Array);
+      mockInsert(
+        tracker,
+        TableUser,
+        [
+          FieldNameUser.authorStyle,
+          FieldNameUser.displayName,
+          FieldNameUser.email,
+          FieldNameUser.guestUuid,
+          FieldNameUser.photoUrl,
+          FieldNameUser.username,
+        ],
+        [{ [FieldNameUser.id]: userId }],
+      );
+      const [uuid, id] = await service.createGuestUser();
+      expect(uuid).toBe(guestUuid);
+      expect(id).toBe(userId);
+      expectBindings(tracker, 'insert', [
+        [
+          expect.any(Number),
+          expect.stringContaining('Guest '),
+          null,
+          guestUuid,
+          null,
+          null,
+        ],
+      ]);
+    });
+
+    it('throws GenericDBError if insert fails', async () => {
+      mockInsert(
+        tracker,
+        TableUser,
+        [
+          FieldNameUser.authorStyle,
+          FieldNameUser.displayName,
+          FieldNameUser.email,
+          FieldNameUser.guestUuid,
+          FieldNameUser.photoUrl,
+          FieldNameUser.username,
+        ],
+        [],
+      );
+      await expect(service.createGuestUser()).rejects.toThrow(GenericDBError);
     });
   });
 
   describe('deleteUser', () => {
-    it('works', async () => {
-      const username = 'hardcoded';
-      const displayname = 'Testy';
-      const newUser = User.create(username, displayname) as User;
-      jest.spyOn(userRepo, 'remove').mockImplementationOnce(
-        // eslint-disable-next-line @typescript-eslint/require-await
-        async (user: User): Promise<User> => {
-          expect(user).toEqual(newUser);
-          return user;
-        },
-      );
-      await service.deleteUser(newUser);
+    it('deletes a user by id', async () => {
+      mockDelete(tracker, TableUser, [FieldNameUser.id], 1);
+      await service.deleteUser(userId);
+      expectBindings(tracker, 'delete', [[userId]]);
+    });
+
+    it('throws NotInDBError if user not found', async () => {
+      mockDelete(tracker, TableUser, [FieldNameUser.id], 0);
+      await expect(service.deleteUser(userId)).rejects.toThrow(NotInDBError);
+      expectBindings(tracker, 'delete', [[userId]]);
     });
   });
 
-  describe('changedDisplayName', () => {
-    it('works', async () => {
-      const username = 'hardcoded';
-      const displayname = 'Testy';
-      const user = User.create(username, displayname) as User;
-      const newDisplayName = 'Testy2';
-      jest.spyOn(userRepo, 'save').mockImplementationOnce(
-        // eslint-disable-next-line @typescript-eslint/require-await
-        async (user: User): Promise<User> => {
-          expect(user.displayName).toEqual(newDisplayName);
-          return user;
-        },
+  describe('updateUser', () => {
+    it('updates user fields', async () => {
+      mockUpdate(
+        tracker,
+        TableUser,
+        [
+          FieldNameUser.displayName,
+          FieldNameUser.email,
+          FieldNameUser.photoUrl,
+        ],
+        FieldNameUser.id,
+        1,
       );
-      await service.updateUser(user, newDisplayName, undefined, undefined);
+      await service.updateUser(
+        userId,
+        'New Name',
+        'new@example.com',
+        'https://new.url',
+      );
+      expectBindings(tracker, 'update', [
+        ['New Name', 'new@example.com', 'https://new.url', userId],
+      ]);
     });
-  });
 
-  describe('getUserByUsername', () => {
-    const username = 'hardcoded';
-    const displayname = 'Testy';
-    const user = User.create(username, displayname) as User;
-    it('works', async () => {
-      jest.spyOn(userRepo, 'findOne').mockResolvedValueOnce(user);
-      const getUser = await service.getUserByUsername(username);
-      expect(getUser.username).toEqual(username);
-      expect(getUser.displayName).toEqual(displayname);
-    });
-    it('fails when user does not exits', async () => {
-      jest.spyOn(userRepo, 'findOne').mockResolvedValueOnce(null);
-      await expect(service.getUserByUsername(username)).rejects.toThrow(
+    it('throws NotInDBError if update fails', async () => {
+      mockUpdate(
+        tracker,
+        TableUser,
+        [FieldNameUser.displayName],
+        FieldNameUser.id,
+        0,
+      );
+      await expect(service.updateUser(userId, 'New Name')).rejects.toThrow(
         NotInDBError,
       );
+      expectBindings(tracker, 'update', [['New Name', userId]]);
     });
-  });
 
-  describe('getPhotoUrl', () => {
-    const username = 'hardcoded';
-    const displayname = 'Testy';
-    const user = User.create(username, displayname) as User;
-    it('works if a user has a photoUrl', () => {
-      const photo = 'testPhotoUrl';
-      user.photo = photo;
-      const photoUrl = service.getPhotoUrl(user);
-      expect(photoUrl).toEqual(photo);
-    });
-    it('works if a user no photoUrl', () => {
-      user.photo = null;
-      const photoUrl = service.getPhotoUrl(user);
-      expect(photoUrl).toEqual('');
-    });
-  });
-
-  describe('toUserDto', () => {
-    const username = 'hardcoded';
-    const displayname = 'Testy';
-    const user = User.create(username, displayname) as User;
-    it('works if a user is provided', () => {
-      const userDto = service.toUserDto(user);
-      expect(userDto.username).toEqual(username);
-      expect(userDto.displayName).toEqual(displayname);
-      expect(userDto.photoUrl).toEqual('');
-    });
-  });
-
-  describe('toFullUserDto', () => {
-    const username = 'hardcoded';
-    const displayname = 'Testy';
-    const user = User.create(username, displayname) as User;
-    it('works if a user is provided', () => {
-      const userDto = service.toFullUserDto(user);
-      expect(userDto.username).toEqual(username);
-      expect(userDto.displayName).toEqual(displayname);
-      expect(userDto.photoUrl).toEqual('');
-      expect(userDto.email).toEqual('');
+    it('does nothing if no fields are provided', async () => {
+      const spy = jest.spyOn(service['knex'](TableUser), 'update');
+      await service.updateUser(userId);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
     });
   });
 });

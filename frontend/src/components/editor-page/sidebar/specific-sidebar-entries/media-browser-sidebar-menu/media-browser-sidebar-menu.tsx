@@ -17,7 +17,7 @@ import { AsyncLoadingBoundary } from '../../../../common/async-loading-boundary/
 import { MediaEntry } from './media-entry'
 import { MediaEntryDeletionModal } from './media-entry-deletion-modal'
 import { MediaBrowserEmpty } from './media-browser-empty'
-import type { MediaUploadDto } from '@hedgedoc/commons'
+import type { MediaUploadInterface } from '@hedgedoc/commons'
 
 /**
  * Renders the media browser "menu" for the sidebar.
@@ -34,8 +34,8 @@ export const MediaBrowserSidebarMenu: React.FC<SpecificSidebarMenuProps> = ({
   selectedMenuId
 }) => {
   useTranslation()
-  const noteId = useApplicationState((state) => state.noteDetails?.id ?? '')
-  const [mediaEntryForDeletion, setMediaEntryForDeletion] = useState<MediaUploadDto | null>(null)
+  const noteAlias = useApplicationState((state) => state.noteDetails?.primaryAlias ?? '')
+  const [mediaEntryForDeletion, setMediaEntryForDeletion] = useState<MediaUploadInterface | null>(null)
 
   const hide = selectedMenuId !== DocumentSidebarMenuSelection.NONE && selectedMenuId !== menuId
   const expand = selectedMenuId === menuId
@@ -43,7 +43,7 @@ export const MediaBrowserSidebarMenu: React.FC<SpecificSidebarMenuProps> = ({
     onClick(menuId)
   }, [menuId, onClick])
 
-  const { value, loading, error } = useAsync(() => getMediaForNote(noteId), [expand, noteId])
+  const { value, loading, error } = useAsync(() => getMediaForNote(noteAlias), [expand, noteAlias])
 
   const mediaEntries = useMemo(() => {
     if (loading || error || !value) {

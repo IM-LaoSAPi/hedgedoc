@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2023 The HedgeDoc developers (see AUTHORS file)
+ * SPDX-FileCopyrightText: 2025 The HedgeDoc developers (see AUTHORS file)
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
@@ -31,8 +31,13 @@ describe('realtime user status adapter', () => {
   const clientLoggedIn2Username = 'logged.in2';
   const clientNotReadyUsername = 'not.ready';
   const clientDeclineUsername = 'read.only';
+  const clientLoggedIn1StyleIndex = 1;
+  const clientLoggedIn2StyleIndex = 2;
+  const clientNotReadyStyleIndex = 3;
+  const clientDeclineStyleIndex = 4;
 
   const guestDisplayName = 'Virtuous Mockingbird';
+  const guestStyleIndex = 5;
 
   let messageTransporterLoggedIn1: MessageTransporter;
   let messageTransporterLoggedIn2: MessageTransporter;
@@ -92,6 +97,7 @@ describe('realtime user status adapter', () => {
     clientLoggedIn1 = new RealtimeUserStatusAdapter(
       clientLoggedIn1Username,
       clientLoggedIn1Username,
+      clientLoggedIn1StyleIndex,
       otherAdapterCollector,
       messageTransporterLoggedIn1,
       () => true,
@@ -99,6 +105,7 @@ describe('realtime user status adapter', () => {
     clientLoggedIn2 = new RealtimeUserStatusAdapter(
       clientLoggedIn2Username,
       clientLoggedIn2Username,
+      clientLoggedIn2StyleIndex,
       otherAdapterCollector,
       messageTransporterLoggedIn2,
       () => true,
@@ -106,6 +113,7 @@ describe('realtime user status adapter', () => {
     clientGuest = new RealtimeUserStatusAdapter(
       null,
       guestDisplayName,
+      guestStyleIndex,
       otherAdapterCollector,
       messageTransporterGuest,
       () => true,
@@ -113,6 +121,7 @@ describe('realtime user status adapter', () => {
     clientNotReady = new RealtimeUserStatusAdapter(
       clientNotReadyUsername,
       clientNotReadyUsername,
+      clientNotReadyStyleIndex,
       otherAdapterCollector,
       messageTransporterNotReady,
       () => true,
@@ -120,6 +129,7 @@ describe('realtime user status adapter', () => {
     clientDecline = new RealtimeUserStatusAdapter(
       clientDeclineUsername,
       clientDeclineUsername,
+      clientDeclineStyleIndex,
       otherAdapterCollector,
       messageTransporterDecline,
       () => false,
@@ -154,6 +164,33 @@ describe('realtime user status adapter', () => {
     jest.advanceTimersByTime(500);
   });
 
+  afterEach(() => {
+    // Disconnect all message transporters to remove event listeners
+    messageTransporterLoggedIn1.disconnect();
+    messageTransporterLoggedIn2.disconnect();
+    messageTransporterGuest.disconnect();
+    messageTransporterNotReady.disconnect();
+    messageTransporterDecline.disconnect();
+
+    clientLoggedIn1 = undefined;
+    clientLoggedIn2 = undefined;
+    clientGuest = undefined;
+    clientNotReady = undefined;
+    clientDecline = undefined;
+
+    clientLoggedIn1SendMessageSpy?.mockRestore();
+    clientLoggedIn2SendMessageSpy?.mockRestore();
+    clientGuestSendMessageSpy?.mockRestore();
+    clientNotReadySendMessageSpy?.mockRestore();
+    clientDeclineSendMessageSpy?.mockRestore();
+
+    clientLoggedIn1SendMessageSpy = undefined as unknown as SendMessageSpy;
+    clientLoggedIn2SendMessageSpy = undefined as unknown as SendMessageSpy;
+    clientGuestSendMessageSpy = undefined as unknown as SendMessageSpy;
+    clientNotReadySendMessageSpy = undefined as unknown as SendMessageSpy;
+    clientDeclineSendMessageSpy = undefined as unknown as SendMessageSpy;
+  });
+
   it('can answer a state request', () => {
     expect(clientLoggedIn1SendMessageSpy).toHaveBeenCalledTimes(1);
     expect(clientLoggedIn2SendMessageSpy).toHaveBeenCalledTimes(1);
@@ -167,7 +204,7 @@ describe('realtime user status adapter', () => {
       type: MessageType.REALTIME_USER_STATE_SET,
       payload: {
         ownUser: {
-          styleIndex: 0,
+          styleIndex: clientLoggedIn1StyleIndex,
           displayName: clientLoggedIn1Username,
         },
         users: [
@@ -177,7 +214,7 @@ describe('realtime user status adapter', () => {
               from: 0,
               to: 0,
             },
-            styleIndex: 1,
+            styleIndex: clientLoggedIn2StyleIndex,
             username: clientLoggedIn2Username,
             displayName: clientLoggedIn2Username,
           },
@@ -187,7 +224,7 @@ describe('realtime user status adapter', () => {
               from: 0,
               to: 0,
             },
-            styleIndex: 2,
+            styleIndex: guestStyleIndex,
             username: null,
             displayName: guestDisplayName,
           },
@@ -195,7 +232,7 @@ describe('realtime user status adapter', () => {
             active: true,
             cursor: null,
             displayName: clientDeclineUsername,
-            styleIndex: 4,
+            styleIndex: clientDeclineStyleIndex,
             username: clientDeclineUsername,
           },
         ],
@@ -233,7 +270,7 @@ describe('realtime user status adapter', () => {
       type: MessageType.REALTIME_USER_STATE_SET,
       payload: {
         ownUser: {
-          styleIndex: 1,
+          styleIndex: clientLoggedIn2StyleIndex,
           displayName: clientLoggedIn2Username,
         },
         users: [
@@ -243,7 +280,7 @@ describe('realtime user status adapter', () => {
               from: newFrom,
               to: newTo,
             },
-            styleIndex: 0,
+            styleIndex: clientLoggedIn1StyleIndex,
             username: clientLoggedIn1Username,
             displayName: clientLoggedIn1Username,
           },
@@ -253,7 +290,7 @@ describe('realtime user status adapter', () => {
               from: 0,
               to: 0,
             },
-            styleIndex: 2,
+            styleIndex: guestStyleIndex,
             username: null,
             displayName: guestDisplayName,
           },
@@ -261,7 +298,7 @@ describe('realtime user status adapter', () => {
             active: true,
             cursor: null,
             displayName: clientDeclineUsername,
-            styleIndex: 4,
+            styleIndex: clientDeclineStyleIndex,
             username: clientDeclineUsername,
           },
         ],
@@ -272,7 +309,7 @@ describe('realtime user status adapter', () => {
       type: MessageType.REALTIME_USER_STATE_SET,
       payload: {
         ownUser: {
-          styleIndex: 2,
+          styleIndex: guestStyleIndex,
           displayName: guestDisplayName,
         },
         users: [
@@ -282,7 +319,7 @@ describe('realtime user status adapter', () => {
               from: newFrom,
               to: newTo,
             },
-            styleIndex: 0,
+            styleIndex: clientLoggedIn1StyleIndex,
             username: clientLoggedIn1Username,
             displayName: clientLoggedIn1Username,
           },
@@ -292,7 +329,7 @@ describe('realtime user status adapter', () => {
               from: 0,
               to: 0,
             },
-            styleIndex: 1,
+            styleIndex: clientLoggedIn2StyleIndex,
             username: clientLoggedIn2Username,
             displayName: clientLoggedIn2Username,
           },
@@ -300,7 +337,7 @@ describe('realtime user status adapter', () => {
             active: true,
             cursor: null,
             displayName: clientDeclineUsername,
-            styleIndex: 4,
+            styleIndex: clientDeclineStyleIndex,
             username: clientDeclineUsername,
           },
         ],
@@ -312,7 +349,7 @@ describe('realtime user status adapter', () => {
       payload: {
         ownUser: {
           displayName: clientDeclineUsername,
-          styleIndex: 4,
+          styleIndex: clientDeclineStyleIndex,
         },
         users: [
           {
@@ -321,7 +358,7 @@ describe('realtime user status adapter', () => {
               from: newFrom,
               to: newTo,
             },
-            styleIndex: 0,
+            styleIndex: clientLoggedIn1StyleIndex,
             username: clientLoggedIn1Username,
             displayName: clientLoggedIn1Username,
           },
@@ -331,7 +368,7 @@ describe('realtime user status adapter', () => {
               from: 0,
               to: 0,
             },
-            styleIndex: 1,
+            styleIndex: clientLoggedIn2StyleIndex,
             username: clientLoggedIn2Username,
             displayName: clientLoggedIn2Username,
           },
@@ -342,7 +379,7 @@ describe('realtime user status adapter', () => {
               to: 0,
             },
             displayName: guestDisplayName,
-            styleIndex: 2,
+            styleIndex: guestStyleIndex,
             username: null,
           },
         ],
@@ -378,7 +415,7 @@ describe('realtime user status adapter', () => {
       type: MessageType.REALTIME_USER_STATE_SET,
       payload: {
         ownUser: {
-          styleIndex: 0,
+          styleIndex: clientLoggedIn1StyleIndex,
           displayName: clientLoggedIn1Username,
         },
         users: [
@@ -388,7 +425,7 @@ describe('realtime user status adapter', () => {
               from: 0,
               to: 0,
             },
-            styleIndex: 2,
+            styleIndex: guestStyleIndex,
             username: null,
             displayName: guestDisplayName,
           },
@@ -396,7 +433,7 @@ describe('realtime user status adapter', () => {
             active: true,
             cursor: null,
             displayName: clientDeclineUsername,
-            styleIndex: 4,
+            styleIndex: clientDeclineStyleIndex,
             username: clientDeclineUsername,
           },
         ],
@@ -407,7 +444,7 @@ describe('realtime user status adapter', () => {
       type: MessageType.REALTIME_USER_STATE_SET,
       payload: {
         ownUser: {
-          styleIndex: 2,
+          styleIndex: guestStyleIndex,
           displayName: guestDisplayName,
         },
         users: [
@@ -417,7 +454,7 @@ describe('realtime user status adapter', () => {
               from: 0,
               to: 0,
             },
-            styleIndex: 0,
+            styleIndex: clientLoggedIn1StyleIndex,
             username: clientLoggedIn1Username,
             displayName: clientLoggedIn1Username,
           },
@@ -425,7 +462,7 @@ describe('realtime user status adapter', () => {
             active: true,
             cursor: null,
             displayName: clientDeclineUsername,
-            styleIndex: 4,
+            styleIndex: clientDeclineStyleIndex,
             username: clientDeclineUsername,
           },
         ],
@@ -437,7 +474,7 @@ describe('realtime user status adapter', () => {
       payload: {
         ownUser: {
           displayName: clientDeclineUsername,
-          styleIndex: 4,
+          styleIndex: clientDeclineStyleIndex,
         },
         users: [
           {
@@ -446,7 +483,7 @@ describe('realtime user status adapter', () => {
               from: 0,
               to: 0,
             },
-            styleIndex: 0,
+            styleIndex: clientLoggedIn1StyleIndex,
             username: clientLoggedIn1Username,
             displayName: clientLoggedIn1Username,
           },
@@ -457,7 +494,7 @@ describe('realtime user status adapter', () => {
               to: 0,
             },
             displayName: guestDisplayName,
-            styleIndex: 2,
+            styleIndex: guestStyleIndex,
             username: null,
           },
         ],
@@ -499,7 +536,7 @@ describe('realtime user status adapter', () => {
         type: MessageType.REALTIME_USER_STATE_SET,
         payload: {
           ownUser: {
-            styleIndex: 1,
+            styleIndex: clientLoggedIn2StyleIndex,
             displayName: clientLoggedIn2Username,
           },
           users: [
@@ -509,7 +546,7 @@ describe('realtime user status adapter', () => {
                 from: 0,
                 to: 0,
               },
-              styleIndex: 0,
+              styleIndex: clientLoggedIn1StyleIndex,
               username: clientLoggedIn1Username,
               displayName: clientLoggedIn1Username,
             },
@@ -519,7 +556,7 @@ describe('realtime user status adapter', () => {
                 from: 0,
                 to: 0,
               },
-              styleIndex: 2,
+              styleIndex: guestStyleIndex,
               username: null,
               displayName: guestDisplayName,
             },
@@ -527,7 +564,7 @@ describe('realtime user status adapter', () => {
               active: true,
               cursor: null,
               displayName: clientDeclineUsername,
-              styleIndex: 4,
+              styleIndex: clientDeclineStyleIndex,
               username: clientDeclineUsername,
             },
           ],
@@ -539,7 +576,7 @@ describe('realtime user status adapter', () => {
         type: MessageType.REALTIME_USER_STATE_SET,
         payload: {
           ownUser: {
-            styleIndex: 2,
+            styleIndex: guestStyleIndex,
             displayName: guestDisplayName,
           },
           users: [
@@ -549,7 +586,7 @@ describe('realtime user status adapter', () => {
                 from: 0,
                 to: 0,
               },
-              styleIndex: 0,
+              styleIndex: clientLoggedIn1StyleIndex,
               username: clientLoggedIn1Username,
               displayName: clientLoggedIn1Username,
             },
@@ -559,7 +596,7 @@ describe('realtime user status adapter', () => {
                 from: 0,
                 to: 0,
               },
-              styleIndex: 1,
+              styleIndex: clientLoggedIn2StyleIndex,
               username: clientLoggedIn2Username,
               displayName: clientLoggedIn2Username,
             },
@@ -567,7 +604,7 @@ describe('realtime user status adapter', () => {
               active: true,
               cursor: null,
               displayName: clientDeclineUsername,
-              styleIndex: 4,
+              styleIndex: clientDeclineStyleIndex,
               username: clientDeclineUsername,
             },
           ],
@@ -579,7 +616,7 @@ describe('realtime user status adapter', () => {
         type: MessageType.REALTIME_USER_STATE_SET,
         payload: {
           ownUser: {
-            styleIndex: 4,
+            styleIndex: clientDeclineStyleIndex,
             displayName: clientDeclineUsername,
           },
           users: [
@@ -589,7 +626,7 @@ describe('realtime user status adapter', () => {
                 from: 0,
                 to: 0,
               },
-              styleIndex: 0,
+              styleIndex: clientLoggedIn1StyleIndex,
               username: clientLoggedIn1Username,
               displayName: clientLoggedIn1Username,
             },
@@ -599,7 +636,7 @@ describe('realtime user status adapter', () => {
                 from: 0,
                 to: 0,
               },
-              styleIndex: 1,
+              styleIndex: clientLoggedIn2StyleIndex,
               username: clientLoggedIn2Username,
               displayName: clientLoggedIn2Username,
             },
@@ -610,7 +647,7 @@ describe('realtime user status adapter', () => {
                 to: 0,
               },
               displayName: guestDisplayName,
-              styleIndex: 2,
+              styleIndex: guestStyleIndex,
               username: null,
             },
           ],
@@ -673,7 +710,7 @@ describe('realtime user status adapter', () => {
         type: MessageType.REALTIME_USER_STATE_SET,
         payload: {
           ownUser: {
-            styleIndex: 1,
+            styleIndex: clientLoggedIn2StyleIndex,
             displayName: clientLoggedIn2Username,
           },
           users: [
@@ -683,7 +720,7 @@ describe('realtime user status adapter', () => {
                 from: 0,
                 to: 0,
               },
-              styleIndex: 0,
+              styleIndex: clientLoggedIn1StyleIndex,
               username: clientLoggedIn1Username,
               displayName: clientLoggedIn1Username,
             },
@@ -693,7 +730,7 @@ describe('realtime user status adapter', () => {
                 from: 0,
                 to: 0,
               },
-              styleIndex: 2,
+              styleIndex: guestStyleIndex,
               username: null,
               displayName: guestDisplayName,
             },
@@ -701,7 +738,7 @@ describe('realtime user status adapter', () => {
               active: true,
               cursor: null,
               displayName: clientDeclineUsername,
-              styleIndex: 4,
+              styleIndex: clientDeclineStyleIndex,
               username: clientDeclineUsername,
             },
           ],
@@ -713,7 +750,7 @@ describe('realtime user status adapter', () => {
         type: MessageType.REALTIME_USER_STATE_SET,
         payload: {
           ownUser: {
-            styleIndex: 2,
+            styleIndex: guestStyleIndex,
             displayName: guestDisplayName,
           },
           users: [
@@ -723,7 +760,7 @@ describe('realtime user status adapter', () => {
                 from: 0,
                 to: 0,
               },
-              styleIndex: 0,
+              styleIndex: clientLoggedIn1StyleIndex,
               username: clientLoggedIn1Username,
               displayName: clientLoggedIn1Username,
             },
@@ -733,7 +770,7 @@ describe('realtime user status adapter', () => {
                 from: 0,
                 to: 0,
               },
-              styleIndex: 1,
+              styleIndex: clientLoggedIn2StyleIndex,
               username: clientLoggedIn2Username,
               displayName: clientLoggedIn2Username,
             },
@@ -741,7 +778,7 @@ describe('realtime user status adapter', () => {
               active: true,
               cursor: null,
               displayName: clientDeclineUsername,
-              styleIndex: 4,
+              styleIndex: clientDeclineStyleIndex,
               username: clientDeclineUsername,
             },
           ],
@@ -753,7 +790,7 @@ describe('realtime user status adapter', () => {
         type: MessageType.REALTIME_USER_STATE_SET,
         payload: {
           ownUser: {
-            styleIndex: 4,
+            styleIndex: clientDeclineStyleIndex,
             displayName: clientDeclineUsername,
           },
           users: [
@@ -763,7 +800,7 @@ describe('realtime user status adapter', () => {
                 from: 0,
                 to: 0,
               },
-              styleIndex: 0,
+              styleIndex: clientLoggedIn1StyleIndex,
               username: clientLoggedIn1Username,
               displayName: clientLoggedIn1Username,
             },
@@ -773,7 +810,7 @@ describe('realtime user status adapter', () => {
                 from: 0,
                 to: 0,
               },
-              styleIndex: 1,
+              styleIndex: clientLoggedIn2StyleIndex,
               username: clientLoggedIn2Username,
               displayName: clientLoggedIn2Username,
             },
@@ -784,7 +821,7 @@ describe('realtime user status adapter', () => {
                 to: 0,
               },
               displayName: guestDisplayName,
-              styleIndex: 2,
+              styleIndex: guestStyleIndex,
               username: null,
             },
           ],

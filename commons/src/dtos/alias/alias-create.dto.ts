@@ -8,13 +8,13 @@ import { z } from 'zod'
 
 export const AliasCreateSchema = z
   .object({
-    noteIdOrAlias: z
+    noteAlias: z
       .string()
       .describe(
-        'The note id, which identifies the note the alias should be added to',
+        'An existing note alias identifying the note for which the alias should be added to',
       ),
     newAlias: z.string().describe('The new alias'),
   })
   .describe('DTO for creating a new alias')
 
-export type AliasCreateDto = z.infer<typeof AliasCreateSchema>
+export type AliasCreateInterface = z.infer<typeof AliasCreateSchema>

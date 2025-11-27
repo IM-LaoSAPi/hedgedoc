@@ -5,43 +5,45 @@
  */
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { RouterModule, Routes } from '@nestjs/core';
+import { APP_INTERCEPTOR, APP_PIPE, RouterModule, Routes } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { KnexModule } from 'nest-knexjs';
+import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod';
 
+import { AliasModule } from './alias/alias.module';
 import { ApiTokenModule } from './api-token/api-token.module';
 import { PrivateApiModule } from './api/private/private-api.module';
 import { PublicApiModule } from './api/public/public-api.module';
 import { AuthModule } from './auth/auth.module';
-import { AuthorsModule } from './authors/authors.module';
-import appConfig from './config/app.config';
+import appConfig, { AppConfig } from './config/app.config';
 import authConfig from './config/auth.config';
 import cspConfig from './config/csp.config';
 import customizationConfig from './config/customization.config';
 import databaseConfig, {
+  getKnexConfig,
   PostgresDatabaseConfig,
 } from './config/database.config';
 import externalConfig from './config/external-services.config';
+import { Loglevel } from './config/loglevel.enum';
 import mediaConfig from './config/media.config';
 import noteConfig from './config/note.config';
 import { eventModuleConfig } from './events';
 import { FrontendConfigModule } from './frontend-config/frontend-config.module';
 import { FrontendConfigService } from './frontend-config/frontend-config.service';
 import { GroupsModule } from './groups/groups.module';
-import { HistoryModule } from './history/history.module';
+import { KnexLoggerService } from './logger/knex-logger.service';
 import { LoggerModule } from './logger/logger.module';
-import { TypeormLoggerService } from './logger/typeorm-logger.service';
 import { MediaRedirectModule } from './media-redirect/media-redirect.module';
 import { MediaModule } from './media/media.module';
+import { MessageModule } from './message/message.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
-import { NotesModule } from './notes/notes.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { WebsocketModule } from './realtime/websocket/websocket.module';
 import { RevisionsModule } from './revisions/revisions.module';
 import { SessionModule } from './sessions/session.module';
 import { UsersModule } from './users/users.module';
-import { detectTsNode } from './utils/detectTsNode';
+import { isDevMode } from './utils/dev-mode';
 
 const routes: Routes = [
   {
@@ -61,31 +63,31 @@ const routes: Routes = [
 @Module({
   imports: [
     RouterModule.register(routes),
-    TypeOrmModule.forRootAsync({
-      imports: [ConfigModule, LoggerModule],
-      inject: [databaseConfig.KEY, TypeormLoggerService],
+    KnexModule.forRootAsync({
+      imports: [],
+      inject: [appConfig.KEY, databaseConfig.KEY, KnexLoggerService],
       useFactory: (
+        appConfig: AppConfig,
         databaseConfig: PostgresDatabaseConfig,
-        logger: TypeormLoggerService,
-      ) => {
-        return {
-          type: databaseConfig.type,
-          host: databaseConfig.host,
-          port: databaseConfig.port,
-          username: databaseConfig.username,
-          password: databaseConfig.password,
-          database: databaseConfig.name,
-          autoLoadEntities: true,
-          logging: true,
-          logger: logger,
-          migrations: [
-            `**/migrations/${databaseConfig.type}-*.${
-              detectTsNode() ? 'ts' : 'js'
-            }`,
-          ],
-          migrationsRun: true,
-        };
-      },
+        knexLoggerService: KnexLoggerService,
+      ) => ({
+        config: {
+          ...getKnexConfig(databaseConfig),
+          log: {
+            warn: knexLoggerService.warn.bind(knexLoggerService),
+            error: knexLoggerService.error.bind(knexLoggerService),
+            deprecate: knexLoggerService.deprecate.bind(knexLoggerService),
+            debug: knexLoggerService.debug.bind(knexLoggerService),
+          },
+          migrations: {
+            directory: 'src/database/migrations/',
+          },
+          debug:
+            isDevMode() &&
+            (appConfig.loglevel === Loglevel.DEBUG ||
+              appConfig.loglevel === Loglevel.TRACE),
+        },
+      }),
     }),
     ConfigModule.forRoot({
       load: [
@@ -102,13 +104,11 @@ const routes: Routes = [
     }),
     EventEmitterModule.forRoot(eventModuleConfig),
     ScheduleModule.forRoot(),
-    NotesModule,
+    AliasModule,
     UsersModule,
     RevisionsModule,
-    AuthorsModule,
     PublicApiModule,
     PrivateApiModule,
-    HistoryModule,
     MonitoringModule,
     PermissionsModule,
     GroupsModule,
@@ -120,8 +120,19 @@ const routes: Routes = [
     AuthModule,
     SessionModule,
     MediaRedirectModule,
+    MessageModule,
   ],
   controllers: [],
-  providers: [FrontendConfigService],
+  providers: [
+    FrontendConfigService,
+    {
+      provide: APP_PIPE,
+      useClass: ZodValidationPipe,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ZodSerializerInterceptor,
+    },
+  ],
 })
 export class AppModule {}

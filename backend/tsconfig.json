@@ -1,7 +1,5 @@
 {
-  "extends": [
-    "@tsconfig/node18/tsconfig.json"
-  ],
+  "extends": "@tsconfig/node18/tsconfig.json",
   "compilerOptions": {
     "declaration": true,
     "removeComments": true,
@@ -17,6 +15,9 @@
     "resolveJsonModule": true,
     "useDefineForClassFields": false,
     "preserveWatchOutput": true,
-    "allowJs": true
-  }
+    "allowJs": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test"]
 }

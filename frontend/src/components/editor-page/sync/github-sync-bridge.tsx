@@ -3,7 +3,8 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import React, { useEffect } from 'react'
+import type React from 'react'
+import { useEffect } from 'react'
 import { useApplicationState } from '../../../hooks/common/use-application-state'
 import { useChangeEditorContentCallback } from '../change-content-context/use-change-editor-content-callback'
 import type { ContentEdits } from '../editor-pane/tool-bar/formatters/types/changes'
@@ -24,7 +25,7 @@ import {
  * No UI is rendered.
  */
 export const GithubSyncBridge: React.FC = () => {
-  const noteId = useApplicationState((state) => state.noteDetails?.id)
+  const noteId = useApplicationState((state) => state.noteDetails?.primaryAlias)
   const changeEditorContent = useChangeEditorContentCallback()
   const currentNoteContent = useNoteMarkdownContent()
   const { showErrorNotification, dispatchUiNotification } = useUiNotifications()
@@ -50,6 +51,7 @@ export const GithubSyncBridge: React.FC = () => {
               undefined
             ]
           }
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
           changeEditorContent(formatter as any)
           saveLastSyncedSha(noteId, sha ?? null)
           dispatchUiNotification('notifications.success.title', 'notifications.sync.pullSuccess', {

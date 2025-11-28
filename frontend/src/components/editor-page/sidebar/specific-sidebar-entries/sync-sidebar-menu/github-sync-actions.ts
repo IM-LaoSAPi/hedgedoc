@@ -128,7 +128,7 @@ export interface GithubFileContent {
 export const getFileContent = async (token: string, target: GithubSyncTarget): Promise<GithubFileContent> => {
   const entries = await listRepositoryPathContents(token, target.owner, target.repo, target.path, target.branch)
   // API returns a single object for file; our helper normalizes to array
-  const file = entries.find((e: any) => e.type === 'file' && e.path === target.path) as any
+  const file = entries.find((e) => e.type === 'file' && e.path === target.path)
   if (!file) {
     return { content: '', sha: null }
   }

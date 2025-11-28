@@ -18,7 +18,7 @@ import { useOutlineButtonVariant } from '../../../../hooks/dark-mode/use-outline
  * Actual sync behavior will be implemented later.
  */
 export const GithubSyncQuickActions: React.FC = () => {
-  const noteId = useApplicationState((state) => state.noteDetails?.id)
+  const noteId = useApplicationState((state) => state.noteDetails?.primaryAlias)
   const [hasToken, setHasToken] = useState(false)
   const [hasTarget, setHasTarget] = useState(false)
   const { dispatchUiNotification } = useUiNotifications()

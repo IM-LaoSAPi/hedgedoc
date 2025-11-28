@@ -3,14 +3,11 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import type { ModalVisibilityProps } from '../../../../common/modals/common-modal'
 import { CommonModal } from '../../../../common/modals/common-modal'
 import { Github } from 'react-bootstrap-icons'
-import { Button, FormControl, FormGroup, FormLabel, FormSelect, FormText, Modal, Spinner } from 'react-bootstrap'
-import { ExternalLink } from '../../../../common/links/external-link'
-import { useOnInputChange } from '../../../../../hooks/common/use-on-input-change'
-import { validateToken } from '../export-sidebar-menu/entries/export-gist-sidebar-entry/validate-token'
+import { Button, FormGroup, FormLabel, FormSelect, Modal, Spinner } from 'react-bootstrap'
 import { listRepositories, type GithubRepository } from './list-repositories'
 import { listBranches } from './list-branches'
 import { listRepositoryPathContents, type GithubContentEntry } from './list-contents'
@@ -41,7 +38,6 @@ export const GithubSyncModal: React.FC<ModalVisibilityProps> = ({ show, onHide }
   const [branchesLoading, setBranchesLoading] = useState(false)
   const [branchesError, setBranchesError] = useState<string | null>(null)
   const [selectedBranch, setSelectedBranch] = useState<string>('')
-  const onBranchChange = useOnInputChange(setSelectedBranch)
   const [currentPath, setCurrentPath] = useState<string>('')
   const [entries, setEntries] = useState<GithubContentEntry[] | null>(null)
   const [entriesLoading, setEntriesLoading] = useState(false)

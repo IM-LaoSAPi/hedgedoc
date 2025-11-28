@@ -11,8 +11,7 @@ import { ButtonGroup } from 'react-bootstrap'
 import {
   Eye as IconEye,
   FileText as IconFileText,
-  WindowSplit as IconWindowSplit,
-  Printer as IconPrinter
+  WindowSplit as IconWindowSplit
 } from 'react-bootstrap-icons'
 import { IconButton } from '../../../../../components/common/icon-button/icon-button'
 import { setEditorSplitPosition } from '../../../../../redux/editor-config/methods'

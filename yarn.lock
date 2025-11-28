@@ -2911,6 +2911,7 @@ __metadata:
     csstype: "npm:3.1.3"
     cypress: "npm:13.17.0"
     cypress-commands: "npm:3.0.0"
+    cypress-file-upload: "npm:^5.0.8"
     cypress-fill-command: "npm:1.0.2"
     d3-graphviz: "npm:5.6.0"
     d3-selection: "npm:3.0.0"
@@ -9032,6 +9033,15 @@ __metadata:
   dependencies:
     path-browserify: "npm:^1.0.1"
   checksum: 10c0/05a126589e26203657ff5d1a47595a2f02f4e6e9a918e89ccc0aaab4bdbc75708c12b263d5c48a061498c485be513dbd989c5c946892678632bf46383cbfab56
+  languageName: node
+  linkType: hard
+
+"cypress-file-upload@npm:^5.0.8":
+  version: 5.0.8
+  resolution: "cypress-file-upload@npm:5.0.8"
+  peerDependencies:
+    cypress: ">3.0.0"
+  checksum: 10c0/881a4d9cc16fbf5fd3efc69e1cfa65dd4036c747e2d0e9b7cf32f7f5bb5a137abfd7ce08bd3b7cf802e5d214c0036eabe4e116ccac162445e51e930656375310
   languageName: node
   linkType: hard
 

@@ -18,7 +18,7 @@ jest.mock('../../../../../notifications/ui-notification-boundary')
 jest.mock('../../../../../../hooks/common/use-application-state')
 
 const deletePromise = Promise.resolve()
-const markAsPrimaryPromise = Promise.resolve({ name: 'mock-alias', isPrimaryAlias: true })
+const markAsPrimaryPromise = Promise.resolve()
 
 describe('AliasesListEntry', () => {
   beforeEach(async () => {

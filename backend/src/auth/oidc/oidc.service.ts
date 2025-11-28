@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { AuthProviderType } from '@hedgedoc/commons';
+import { ProviderType } from '@hedgedoc/commons';
 import { Identity } from '@hedgedoc/database';
 import {
   ForbiddenException,
@@ -201,6 +201,16 @@ export class OidcService {
     request.session.oidc = {
       idToken: tokenSet.id_token,
     };
+
+    // Store GitHub access token in session for sync functionality
+    if (oidcIdentifier === 'github' && tokenSet.access_token) {
+      request.session.githubAccessToken = tokenSet.access_token;
+      this.logger.debug(
+        'Stored GitHub access token in session for sync functionality',
+        'extractUserInfoFromCallback',
+      );
+    }
+
     const userInfoResponse = await client.userinfo(tokenSet);
     const userId = OidcService.getResponseFieldValue(
       userInfoResponse,
@@ -234,7 +244,7 @@ export class OidcService {
       email: email ?? null,
     };
     request.session.pendingUser = {
-      authProviderType: AuthProviderType.OIDC,
+      authProviderType: ProviderType.OIDC,
       authProviderIdentifier: oidcIdentifier,
       providerUserId: userId,
       confirmationData: newUserData,
@@ -262,7 +272,7 @@ export class OidcService {
     try {
       return await this.identityService.getIdentityFromUserIdAndProviderType(
         oidcUserId,
-        AuthProviderType.OIDC,
+        ProviderType.OIDC,
         oidcIdentifier,
       );
     } catch (e) {

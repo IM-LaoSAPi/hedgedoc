@@ -52,4 +52,7 @@ export interface SessionState {
 
   /** The user data of the user that is currently being created */
   pendingUser?: PendingUserSessionState;
+
+  /** The GitHub access token for sync functionality */
+  githubAccessToken?: string;
 }

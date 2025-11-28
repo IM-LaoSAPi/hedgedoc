@@ -25,6 +25,7 @@ import { OidcController } from './auth/oidc/oidc.controller';
 import { ConfigController } from './config/config.controller';
 import { GroupsController } from './groups/groups.controller';
 import { MeController } from './me/me.controller';
+import { GithubTokenController } from './me/github-token.controller';
 import { MediaController } from './media/media.controller';
 import { NotesController } from './notes/notes.controller';
 import { UsersController } from './users/users.controller';
@@ -48,6 +49,7 @@ import { UsersController } from './users/users.controller';
     GuestController,
     MediaController,
     MeController,
+    GithubTokenController,
     NotesController,
     AliasController,
     AuthController,

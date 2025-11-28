@@ -6,9 +6,10 @@
 import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
-import { SessionGuard, RequestWithSession } from '../../../auth/session.guard';
+import { SessionGuard } from '../../../auth/session.guard';
 import { ConsoleLoggerService } from '../../../logger/console-logger.service';
-import { OpenApi } from '../../utils/openapi.decorator';
+import { OpenApi } from '../../utils/decorators/openapi.decorator';
+import { RequestWithSession } from '../../utils/request.type';
 
 export interface GithubTokenResponseDto {
   hasToken: boolean;

@@ -134,8 +134,10 @@ export const getFileContent = async (token: string, target: GithubSyncTarget): P
   }
   // Fetch full file content endpoint (returns content and sha)
   const response = await fetch(
-    `https://api.github.com/repos/${target.owner}/${target.repo}/contents/${encodeURIComponent(target.path)
-      .replace(/%2F/g, '/') }?ref=${encodeURIComponent(target.branch)}`,
+    `https://api.github.com/repos/${target.owner}/${target.repo}/contents/${encodeURIComponent(target.path).replace(
+      /%2F/g,
+      '/'
+    )}?ref=${encodeURIComponent(target.branch)}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -176,8 +178,10 @@ export const putFileContent = async (
     ...(currentSha ? { sha: currentSha } : {})
   }
   const response = await fetch(
-    `https://api.github.com/repos/${target.owner}/${target.repo}/contents/${encodeURIComponent(target.path)
-      .replace(/%2F/g, '/') }`,
+    `https://api.github.com/repos/${target.owner}/${target.repo}/contents/${encodeURIComponent(target.path).replace(
+      /%2F/g,
+      '/'
+    )}`,
     {
       method: 'PUT',
       headers: {
@@ -198,5 +202,3 @@ export const putFileContent = async (
   const json = (await response.json()) as { content?: { sha?: string | null } }
   return json.content?.sha ?? null
 }
-
-

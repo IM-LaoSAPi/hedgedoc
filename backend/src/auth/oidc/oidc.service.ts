@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { ProviderType } from '@hedgedoc/commons';
+import { AuthProviderType } from '@hedgedoc/commons';
 import { Identity } from '@hedgedoc/database';
 import {
   ForbiddenException,
@@ -244,7 +244,7 @@ export class OidcService {
       email: email ?? null,
     };
     request.session.pendingUser = {
-      authProviderType: ProviderType.OIDC,
+      authProviderType: AuthProviderType.OIDC,
       authProviderIdentifier: oidcIdentifier,
       providerUserId: userId,
       confirmationData: newUserData,
@@ -272,7 +272,7 @@ export class OidcService {
     try {
       return await this.identityService.getIdentityFromUserIdAndProviderType(
         oidcUserId,
-        ProviderType.OIDC,
+        AuthProviderType.OIDC,
         oidcIdentifier,
       );
     } catch (e) {

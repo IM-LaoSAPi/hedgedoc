@@ -26,12 +26,7 @@ import { GithubSyncModal } from './github-sync-modal'
  * @param onClick The callback, that should be called when the menu button is pressed
  * @param selectedMenuId The currently selected menu id
  */
-export const SyncSidebarMenu: React.FC<SpecificSidebarMenuProps> = ({
-  className,
-  menuId,
-  onClick,
-  selectedMenuId
-}) => {
+export const SyncSidebarMenu: React.FC<SpecificSidebarMenuProps> = ({ className, menuId, onClick, selectedMenuId }) => {
   useTranslation()
 
   const hide = selectedMenuId !== DocumentSidebarMenuSelection.NONE && selectedMenuId !== menuId
@@ -60,5 +55,3 @@ export const SyncSidebarMenu: React.FC<SpecificSidebarMenuProps> = ({
     </Fragment>
   )
 }
-
-

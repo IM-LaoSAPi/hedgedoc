@@ -10,7 +10,13 @@ set -e
 cleanup () {
     if [ -d ../tmp/src/pages/api ]; then
         echo "🦔 > Moving Mock API files back"
+        # Ensure destination is clean before moving back
+        if [ -d src/pages/api ]; then
+            rm -rf src/pages/api
+        fi
         mv ../tmp/src/pages/api src/pages
+        # Clean tmp directory
+        rm -rf ../tmp/src/pages/api
     fi
 }
 
@@ -28,8 +34,16 @@ if [ ! -z "${NEXT_PUBLIC_USE_MOCK_API}" ]; then
     fi
 else
     echo "🦔 > Moving Mock API because NEXT_PUBLIC_USE_MOCK_API is unset"
-    mkdir -p ../tmp/src/pages
-    mv src/pages/api ../tmp/src/pages/
+    if [ -d src/pages/api ]; then
+        mkdir -p ../tmp/src/pages
+        # Ensure tmp destination is clean
+        if [ -d ../tmp/src/pages/api ]; then
+            rm -rf ../tmp/src/pages/api
+        fi
+        mv src/pages/api ../tmp/src/pages/
+    else
+        echo "🦔 > Mock API not present; skipping move"
+    fi
 fi
 
 echo "🦔 > Building"

@@ -39,12 +39,12 @@ export const GithubSyncQuickActions: React.FC = () => {
           setHasToken(true)
           return
         }
-        
+
         // If not in localStorage, try to fetch from backend API
         fetch('/api/private/me/github-token', {
           credentials: 'include'
         })
-          .then(response => {
+          .then((response) => {
             if (response.ok) {
               return response.json()
             }
@@ -100,19 +100,26 @@ export const GithubSyncQuickActions: React.FC = () => {
       setHasTarget(false)
       return
     }
-    
+
     const checkTarget = () => {
       try {
         const targetRaw = window.localStorage.getItem(targetStorageKey)
-        console.log('GitHub Sync Quick Actions - checking target:', targetStorageKey, 'found:', !!targetRaw, 'value:', targetRaw)
+        console.log(
+          'GitHub Sync Quick Actions - checking target:',
+          targetStorageKey,
+          'found:',
+          !!targetRaw,
+          'value:',
+          targetRaw
+        )
         setHasTarget(!!targetRaw)
       } catch {
         setHasTarget(false)
       }
     }
-    
+
     checkTarget()
-    
+
     // Listen for updates to the target
     const onCustom = () => checkTarget()
     const onStorage = (e: StorageEvent) => {
@@ -120,10 +127,10 @@ export const GithubSyncQuickActions: React.FC = () => {
         checkTarget()
       }
     }
-    
+
     window.addEventListener('hd2.sync.github.updated', onCustom as EventListener)
     window.addEventListener('storage', onStorage)
-    
+
     return () => {
       window.removeEventListener('hd2.sync.github.updated', onCustom as EventListener)
       window.removeEventListener('storage', onStorage)
@@ -175,5 +182,3 @@ export const GithubSyncQuickActions: React.FC = () => {
     </Fragment>
   )
 }
-
-

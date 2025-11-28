@@ -31,23 +31,23 @@ enum SyncStep {
  * @param onHide Callback that is fired when the modal is about to be closed.
  */
 export const GithubSyncModal: React.FC<ModalVisibilityProps> = ({ show, onHide }) => {
-  const [step, setStep] = useState<SyncStep>(SyncStep.OWNER); // Default to OWNER step
-  const [repos, setRepos] = useState<GithubRepository[] | null>(null);
-  const [isLoadingRepos, setIsLoadingRepos] = useState(false);
-  const [reposError, setReposError] = useState<string | null>(null);
-  const [selectedOwner, setSelectedOwner] = useState<string>('');
-  const [selectedRepoFullName, setSelectedRepoFullName] = useState<string>('');
-  const [branches, setBranches] = useState<string[] | null>(null);
-  const [branchesLoading, setBranchesLoading] = useState(false);
-  const [branchesError, setBranchesError] = useState<string | null>(null);
-  const [selectedBranch, setSelectedBranch] = useState<string>('');
-  const onBranchChange = useOnInputChange(setSelectedBranch);
-  const [currentPath, setCurrentPath] = useState<string>('');
-  const [entries, setEntries] = useState<GithubContentEntry[] | null>(null);
-  const [entriesLoading, setEntriesLoading] = useState(false);
-  const [entriesError, setEntriesError] = useState<string | null>(null);
-  const [selectedFilePath, setSelectedFilePath] = useState<string>('');
-  const [githubToken, setGithubToken] = useState<string | null>(null);
+  const [step, setStep] = useState<SyncStep>(SyncStep.OWNER) // Default to OWNER step
+  const [repos, setRepos] = useState<GithubRepository[] | null>(null)
+  const [isLoadingRepos, setIsLoadingRepos] = useState(false)
+  const [reposError, setReposError] = useState<string | null>(null)
+  const [selectedOwner, setSelectedOwner] = useState<string>('')
+  const [selectedRepoFullName, setSelectedRepoFullName] = useState<string>('')
+  const [branches, setBranches] = useState<string[] | null>(null)
+  const [branchesLoading, setBranchesLoading] = useState(false)
+  const [branchesError, setBranchesError] = useState<string | null>(null)
+  const [selectedBranch, setSelectedBranch] = useState<string>('')
+  const onBranchChange = useOnInputChange(setSelectedBranch)
+  const [currentPath, setCurrentPath] = useState<string>('')
+  const [entries, setEntries] = useState<GithubContentEntry[] | null>(null)
+  const [entriesLoading, setEntriesLoading] = useState(false)
+  const [entriesError, setEntriesError] = useState<string | null>(null)
+  const [selectedFilePath, setSelectedFilePath] = useState<string>('')
+  const [githubToken, setGithubToken] = useState<string | null>(null)
 
   // Create specific handlers for select elements
   const onOwnerChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -59,35 +59,35 @@ export const GithubSyncModal: React.FC<ModalVisibilityProps> = ({ show, onHide }
   const onBranchSelectChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedBranch(e.target.value)
   }, [])
-  const noteId = useApplicationState((state) => state.noteDetails?.id)
+  const noteId = useApplicationState((state) => state.noteDetails?.primaryAlias)
   // modal no longer performs push/pull; bridge handles actions
 
   // Auto-load token from backend API on modal open
   useEffect(() => {
     if (!show) {
-      return;
+      return
     }
 
     fetch('/api/private/me/github-token', {
       credentials: 'include'
     })
-      .then(response => {
+      .then((response) => {
         if (response.ok) {
-          return response.json();
+          return response.json()
         }
-        throw new Error('Failed to fetch token');
+        throw new Error('Failed to fetch token')
       })
       .then((data: { hasToken: boolean; token?: string }) => {
         if (data.hasToken && data.token) {
-          setGithubToken(data.token); // Store token in state
-          setStep(SyncStep.OWNER); // Skip token input step
+          setGithubToken(data.token) // Store token in state
+          setStep(SyncStep.OWNER) // Skip token input step
         } else {
-          console.error('No OAuth token available. Please log in via GitHub.');
+          console.error('No OAuth token available. Please log in via GitHub.')
         }
       })
       .catch(() => {
-        console.error('Error fetching OAuth token.');
-      });
+        console.error('Error fetching OAuth token.')
+      })
   }, [show])
 
   useEffect(() => {
@@ -95,8 +95,8 @@ export const GithubSyncModal: React.FC<ModalVisibilityProps> = ({ show, onHide }
       return
     }
     if (!githubToken) {
-      setReposError('GitHub token is missing. Please log in again.');
-      return;
+      setReposError('GitHub token is missing. Please log in again.')
+      return
     }
 
     setIsLoadingRepos(true)
@@ -128,48 +128,48 @@ export const GithubSyncModal: React.FC<ModalVisibilityProps> = ({ show, onHide }
   }
   const loadBranches = (owner: string, repo: string, defaultBranch?: string): void => {
     if (!githubToken) {
-      setBranchesError('GitHub token is missing. Please log in again.');
-      return;
+      setBranchesError('GitHub token is missing. Please log in again.')
+      return
     }
 
-    setBranchesLoading(true);
-    setBranchesError(null);
-    setBranches(null);
+    setBranchesLoading(true)
+    setBranchesError(null)
+    setBranches(null)
     listBranches(githubToken, owner, repo)
       .then((list) => {
-        setBranches(list);
+        setBranches(list)
         // prefer repo default branch if available
         if (defaultBranch && list.includes(defaultBranch)) {
-          setSelectedBranch(defaultBranch);
+          setSelectedBranch(defaultBranch)
         } else if (list.length > 0) {
-          setSelectedBranch(list[0]);
+          setSelectedBranch(list[0])
         } else {
-          setSelectedBranch('');
+          setSelectedBranch('')
         }
       })
       .catch((err: unknown) => {
-        setBranchesError(err instanceof Error ? err.message : 'Failed to load branches');
+        setBranchesError(err instanceof Error ? err.message : 'Failed to load branches')
       })
-      .finally(() => setBranchesLoading(false));
+      .finally(() => setBranchesLoading(false))
   }
   // Updated loadEntries to use githubToken
   const loadEntries = (owner: string, repo: string, path: string, ref: string): void => {
     if (!githubToken) {
-      setEntriesError('GitHub token is missing. Please log in again.');
-      return;
+      setEntriesError('GitHub token is missing. Please log in again.')
+      return
     }
 
-    setEntriesLoading(true);
-    setEntriesError(null);
-    setEntries(null);
+    setEntriesLoading(true)
+    setEntriesError(null)
+    setEntries(null)
     listRepositoryPathContents(githubToken, owner, repo, path, ref)
       .then((list) => {
-        setEntries(list);
+        setEntries(list)
       })
       .catch((err: unknown) => {
-        setEntriesError(err instanceof Error ? err.message : 'Failed to load path contents');
+        setEntriesError(err instanceof Error ? err.message : 'Failed to load path contents')
       })
-      .finally(() => setEntriesLoading(false));
+      .finally(() => setEntriesLoading(false))
   }
   const onNextFromRepo = (): void => {
     if (!selectedRepoFullName) {
@@ -238,11 +238,13 @@ export const GithubSyncModal: React.FC<ModalVisibilityProps> = ({ show, onHide }
       })
       // Dispatch multiple events to ensure components pick up the change
       window.dispatchEvent(new CustomEvent('hd2.sync.github.updated'))
-      window.dispatchEvent(new StorageEvent('storage', {
-        key,
-        newValue: window.localStorage.getItem(key),
-        url: window.location.href
-      }))
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key,
+          newValue: window.localStorage.getItem(key),
+          url: window.location.href
+        })
+      )
     } catch (error) {
       console.error('Failed to save GitHub sync target:', error)
     }
@@ -255,9 +257,7 @@ export const GithubSyncModal: React.FC<ModalVisibilityProps> = ({ show, onHide }
         {step === SyncStep.OWNER && (
           <>
             <h5 className={'mb-2'}>Select Organization</h5>
-            <p className={'text-muted small'}>
-              ✓ Authenticated via GitHub OAuth
-            </p>
+            <p className={'text-muted small'}>✓ Authenticated via GitHub OAuth</p>
             {isLoadingRepos && (
               <div className={'d-flex align-items-center gap-2 my-2'}>
                 <Spinner animation='border' size='sm' /> <span>Loading organizations…</span>
@@ -403,5 +403,3 @@ export const GithubSyncModal: React.FC<ModalVisibilityProps> = ({ show, onHide }
     </CommonModal>
   )
 }
-
-

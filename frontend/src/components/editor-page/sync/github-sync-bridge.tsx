@@ -114,5 +114,3 @@ export const GithubSyncBridge: React.FC = () => {
 
   return null
 }
-
-

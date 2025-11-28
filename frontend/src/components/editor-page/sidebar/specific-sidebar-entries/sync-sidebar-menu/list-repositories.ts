@@ -46,5 +46,3 @@ export const listRepositories = async (token: string): Promise<GithubRepository[
   const json = (await response.json()) as GithubRepository[]
   return json
 }
-
-

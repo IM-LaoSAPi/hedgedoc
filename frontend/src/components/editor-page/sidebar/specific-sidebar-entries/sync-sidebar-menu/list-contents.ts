@@ -51,5 +51,3 @@ export const listRepositoryPathContents = async (
   const json = (await response.json()) as GithubContentEntry | GithubContentEntry[]
   return Array.isArray(json) ? json : [json]
 }
-
-

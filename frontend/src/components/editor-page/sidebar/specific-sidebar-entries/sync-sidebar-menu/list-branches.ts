@@ -31,5 +31,3 @@ export const listBranches = async (token: string, owner: string, repo: string): 
   const json = (await response.json()) as Array<{ name: string }>
   return json.map((b) => b.name)
 }
-
-

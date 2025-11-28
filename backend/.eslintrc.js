@@ -1,6 +1,7 @@
-/* SPDX-FileCopyrightText: 2021 The HedgeDoc developers (see AUTHORS file)
+/*
+ * SPDX-FileCopyrightText: 2025 The HedgeDoc developers (see AUTHORS file)
  *
- *  SPDX-License-Identifier: CC0-1.0
+ * SPDX-License-Identifier: CC0-1.0
  */
 module.exports = {
   parser: '@typescript-eslint/parser',
@@ -19,12 +20,15 @@ module.exports = {
         '@typescript-eslint/no-unsafe-member-access': 'off',
         '@typescript-eslint/require-await': 'off',
         '@typescript-eslint/explicit-function-return-type': 'off',
+        // This rule seems to create trouble with our tests and mock-knex-client
+        '@darraghor/nestjs-typed/provided-injected-should-match-factory-parameters':
+          'off',
         'jest/unbound-method': 'error',
         'jest/expect-expect': [
           'error',
           {
             assertFunctionNames: [
-              'expect',
+              'expect**',
               'request.**.expect',
               'agent[0-9]?.**.expect',
             ],
@@ -38,14 +42,25 @@ module.exports = {
         ],
       },
     },
+    {
+      files: ['src/database/**'],
+      rules: {
+        '@typescript-eslint/naming-convention': 'off',
+      },
+    },
   ],
-  plugins: ['@typescript-eslint', 'jest', 'eslint-plugin-local-rules','@darraghor/nestjs-typed'],
+  plugins: [
+    '@typescript-eslint',
+    'jest',
+    'eslint-plugin-local-rules',
+    '@darraghor/nestjs-typed',
+  ],
   extends: [
     'eslint:recommended',
     'plugin:@typescript-eslint/recommended',
     'plugin:@typescript-eslint/recommended-requiring-type-checking',
     'plugin:prettier/recommended',
-    'plugin:@darraghor/nestjs-typed/recommended'
+    'plugin:@darraghor/nestjs-typed/recommended',
   ],
   root: true,
   env: {
@@ -55,7 +70,6 @@ module.exports = {
   rules: {
     'prettier/prettier': ['error', require('./.prettierrc.json')],
     'local-rules/correct-logger-context': 'error',
-    'local-rules/no-typeorm-equal': 'error',
     'func-style': ['error', 'declaration'],
     '@typescript-eslint/no-unused-vars': [
       'warn',

@@ -1,11 +1,17 @@
 /*
- * SPDX-FileCopyrightText: 2024 The HedgeDoc developers (see AUTHORS file)
+ * SPDX-FileCopyrightText: 2025 The HedgeDoc developers (see AUTHORS file)
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import argon2 from '@node-rs/argon2';
 
-import { bufferToBase64Url, checkPassword, hashPassword } from './password';
+import {
+  bufferToBase64Url,
+  checkPassword,
+  checkTokenEquality,
+  hashApiToken,
+  hashPassword,
+} from './password';
 
 const testPassword = 'thisIsATestPassword';
 const hashOfTestPassword =
@@ -22,7 +28,7 @@ describe('hashPassword', () => {
     const regexArgon2 =
       /^\$argon2id\$v=19\$m=19456,t=2,p=1\$[\w+./]{22}\$[\w+./]{43}$/;
     const hash = await hashPassword(testPassword);
-    expect(regexArgon2.test(hash)).toBeTruthy();
+    expect(regexArgon2.test(hash)).toBe(true);
   });
   it('calls argon2.hash with the correct parameters', async () => {
     const spy = jest.spyOn(argon2, 'hash');
@@ -38,13 +44,13 @@ describe('hashPassword', () => {
 describe('checkPassword', () => {
   it("is returning true if the inputs are a plaintext password and it's hashed version", async () => {
     await checkPassword(testPassword, hashOfTestPassword).then((result) =>
-      expect(result).toBeTruthy(),
+      expect(result).toBe(true),
     );
   });
   it('fails, if password is non-matching', async () => {
     const password = 'anotherTestPassword';
     await checkPassword(password, hashOfTestPassword).then((result) =>
-      expect(result).toBeFalsy(),
+      expect(result).toBe(false),
     );
   });
   it('calls argon2.verify with the correct parameters', async () => {
@@ -57,11 +63,11 @@ describe('checkPassword', () => {
     const hash =
       '$argon2id$v=19$m=19456,t=2,p=1$4aBLKxd7MqYQqf/th835yQ$iUMe+HHphn8B8q6gQ3IPL2k1+Bdbb505r7LuqZIMTjg';
     await checkPassword(password, hash).then((result) =>
-      expect(result).toBeTruthy(),
+      expect(result).toBe(true),
     );
     const password2 = 'a'.repeat(73);
     await checkPassword(password2, hash).then((result) =>
-      expect(result).toBeFalsy(),
+      expect(result).toBe(false),
     );
   });
 });
@@ -71,5 +77,27 @@ describe('bufferToBase64Url', () => {
     expect(
       bufferToBase64Url(Buffer.from('testsentence is a test sentence')),
     ).toEqual('dGVzdHNlbnRlbmNlIGlzIGEgdGVzdCBzZW50ZW5jZQ');
+  });
+});
+
+describe('hashApiToken', () => {
+  it('correctly hashes a string', () => {
+    const testToken =
+      'LaD52wgw7pi5zVitv4gR5lxoUa6ncTQGASPmXDSdppB9xcd9kCtqjlrdQ8OOfmG9DNXGvfkIwaOCAv8nRp8IoQ';
+    expect(hashApiToken(testToken)).toEqual(
+      'd820de9eb5ace767c14c02f61b9522485f565201443fd366e6ca0d8a18dcffecf91cb27911b8cac566c3aaced44d02b0441a3b72380479f69eaea0f12e4bd73b',
+    );
+  });
+});
+
+describe('checkTokenEquality', () => {
+  const testToken =
+    'q72OIg1Y0sKvtsRmxtl86AwWfAF1V7LbVFt5PS0k73iyv3DtpG7Fdn2CADBlq5NsnSWMxGzYLeyux0cdFULmiw';
+  const hasedTestToken = hashApiToken(testToken);
+  it('returns true if the token hashes are the same', () => {
+    expect(checkTokenEquality(testToken, hasedTestToken)).toEqual(true);
+  });
+  it('returns false if the token hashes are the same', () => {
+    expect(checkTokenEquality(testToken, hashApiToken('test'))).toEqual(false);
   });
 });

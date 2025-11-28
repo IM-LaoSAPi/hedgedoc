@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import type { RevisionMetadataDto } from '@hedgedoc/commons'
+import type { RevisionMetadataInterface } from '@hedgedoc/commons'
 import { cypressId } from '../../../../../../utils/cypress-attribute'
 import { AsyncLoadingBoundary } from '../../../../../common/async-loading-boundary/async-loading-boundary'
 import { RevisionListEntry } from './revision-list-entry'
@@ -12,11 +12,11 @@ import React, { useMemo } from 'react'
 import { ListGroup } from 'react-bootstrap'
 
 interface RevisionListProps {
-  selectedRevisionId?: number
-  revisions?: RevisionMetadataDto[]
+  selectedRevisionId?: string
+  revisions?: RevisionMetadataInterface[]
   loadingRevisions: boolean
   error?: Error | boolean
-  onRevisionSelect: (selectedRevisionId: number) => void
+  onRevisionSelect: (selectedRevisionId: string) => void
 }
 
 /**
@@ -47,10 +47,10 @@ export const RevisionList: React.FC<RevisionListProps> = ({
       })
       .map((revisionListEntry) => (
         <RevisionListEntry
-          active={selectedRevisionId === revisionListEntry.id}
-          onSelect={() => onRevisionSelect(revisionListEntry.id)}
+          active={selectedRevisionId === revisionListEntry.uuid}
+          onSelect={() => onRevisionSelect(revisionListEntry.uuid)}
           revision={revisionListEntry}
-          key={revisionListEntry.id}
+          key={revisionListEntry.uuid}
         />
       ))
   }, [loadingRevisions, onRevisionSelect, revisions, selectedRevisionId])

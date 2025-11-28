@@ -1,548 +1,607 @@
 /*
- * SPDX-FileCopyrightText: 2024 The HedgeDoc developers (see AUTHORS file)
+ * SPDX-FileCopyrightText: 2025 The HedgeDoc developers (see AUTHORS file)
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+import {
+  FieldNameAlias,
+  FieldNameAuthorshipInfo,
+  FieldNameRevision,
+  FieldNameRevisionTag,
+  FieldNameUser,
+  NoteType,
+  TableAlias,
+  TableAuthorshipInfo,
+  TableRevision,
+  TableRevisionTag,
+  TableUser,
+} from '@hedgedoc/database';
+import { Provider } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { EventEmitterModule } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { createPatch } from 'diff';
-import { Mock } from 'ts-mockery';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import * as diffModule from 'diff';
+import type { Tracker } from 'knex-mock-client';
+import * as uuidModule from 'uuid';
 
-import { ApiToken } from '../api-token/api-token.entity';
-import { Identity } from '../auth/identity.entity';
-import { Author } from '../authors/author.entity';
+import { AliasService } from '../alias/alias.service';
 import appConfigMock from '../config/mock/app.config.mock';
-import authConfigMock from '../config/mock/auth.config.mock';
-import databaseConfigMock from '../config/mock/database.config.mock';
-import noteConfigMock from '../config/mock/note.config.mock';
 import {
   createDefaultMockNoteConfig,
   registerNoteConfig,
 } from '../config/mock/note.config.mock';
 import { NoteConfig } from '../config/note.config';
-import { NotInDBError } from '../errors/errors';
-import { eventModuleConfig } from '../events';
-import { Group } from '../groups/group.entity';
+import { expectBindings } from '../database/mock/expect-bindings';
+import {
+  mockDelete,
+  mockInsert,
+  mockSelect,
+  mockUpdate,
+} from '../database/mock/mock-queries';
+import { mockKnexDb } from '../database/mock/provider';
+import { GenericDBError, NotInDBError } from '../errors/errors';
 import { LoggerModule } from '../logger/logger.module';
-import { Alias } from '../notes/alias.entity';
-import { Note } from '../notes/note.entity';
-import { NotesModule } from '../notes/notes.module';
-import { Tag } from '../notes/tag.entity';
-import { NoteGroupPermission } from '../permissions/note-group-permission.entity';
-import { NoteUserPermission } from '../permissions/note-user-permission.entity';
-import { Session } from '../sessions/session.entity';
-import { User } from '../users/user.entity';
-import { Edit } from './edit.entity';
-import { EditService } from './edit.service';
-import { Revision } from './revision.entity';
 import { RevisionsService } from './revisions.service';
+import * as utilsExtractRevisionMetadataFromContentModule from './utils/extract-revision-metadata-from-content';
+
+jest.mock('diff');
+jest.mock('uuid');
+jest.mock('./utils/extract-revision-metadata-from-content');
 
 describe('RevisionsService', () => {
   let service: RevisionsService;
-  let revisionRepo: Repository<Revision>;
-  let noteRepo: Repository<Note>;
-  const noteConfig: NoteConfig = createDefaultMockNoteConfig();
+  let aliasService: AliasService;
+  let tracker: Tracker;
+  let knexProvider: Provider;
+  let noteConfig: NoteConfig;
 
-  beforeEach(async () => {
-    noteRepo = new Repository<Note>(
-      '',
-      new EntityManager(
-        new DataSource({
-          type: 'sqlite',
-          database: ':memory:',
-        }),
-      ),
-      undefined,
-    );
+  const mockNoteId = 42;
+  const mockPrimaryAlias = 'mock-note';
+  const mockCreatedAt1 = '2012-05-25 09:08:34';
+  const mockCreatedAt1Iso = '2012-05-25T09:08:34.000Z';
+  const mockCreatedAt2 = '2025-09-23 18:04:08';
+  const mockRevisionUuid1 = '84e72936-a851-4c4a-a729-36a851bc4a01';
+  const mockRevisionUuid2 = '8573c04f-9e71-4b8f-b3c0-4f9e71db8ffd';
+  const mockContent1 = 'Revision content';
+  const mockContent2 = 'Revision content 2';
+  const mockPatch = '---this-is-a-mock-patch---';
+  const mockTitle = 'Note Title';
+  const mockDescription = 'Note Description';
+  const mockUsername = 'username';
+  const mockGuestUuid = '9d1a0deb-fed1-45f0-9a0d-ebfed1e5f01f';
+  const mockTag1 = 'tag1';
+  const mockTag2 = 'tag2';
+
+  jest.mock('diff');
+
+  beforeAll(async () => {
+    noteConfig = createDefaultMockNoteConfig();
+    [tracker, knexProvider] = mockKnexDb();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        RevisionsService,
-        EditService,
-        {
-          provide: getRepositoryToken(Revision),
-          useClass: Repository,
-        },
-        {
-          provide: getRepositoryToken(Note),
-          useClass: Repository,
-        },
-      ],
+      providers: [RevisionsService, knexProvider, AliasService],
       imports: [
-        NotesModule,
         LoggerModule,
-        ConfigModule.forRoot({
+        await ConfigModule.forRoot({
           isGlobal: true,
-          load: [
-            appConfigMock,
-            databaseConfigMock,
-            authConfigMock,
-            noteConfigMock,
-            registerNoteConfig(noteConfig),
-          ],
+          load: [appConfigMock, registerNoteConfig(noteConfig)],
         }),
-        EventEmitterModule.forRoot(eventModuleConfig),
       ],
-    })
-      .overrideProvider(getRepositoryToken(Edit))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(User))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(ApiToken))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(Identity))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(Note))
-      .useValue(noteRepo)
-      .overrideProvider(getRepositoryToken(Revision))
-      .useClass(Repository)
-      .overrideProvider(getRepositoryToken(Tag))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(NoteGroupPermission))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(NoteUserPermission))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(Group))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(Alias))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(Session))
-      .useValue({})
-      .overrideProvider(getRepositoryToken(Author))
-      .useValue({})
-      .compile();
+    }).compile();
 
     service = module.get<RevisionsService>(RevisionsService);
-    revisionRepo = module.get<Repository<Revision>>(
-      getRepositoryToken(Revision),
+    aliasService = module.get<AliasService>(AliasService);
+  });
+
+  afterEach(() => {
+    tracker.reset();
+    jest.resetAllMocks();
+    jest.resetModules();
+  });
+
+  it('getAllRevisionMetadataDto', async () => {
+    mockSelect(
+      tracker,
+      [
+        `${TableRevision}"."${FieldNameRevision.uuid}`,
+        `${TableRevision}"."${FieldNameRevision.createdAt}`,
+        `${TableRevision}"."${FieldNameRevision.description}`,
+        `${TableRevision}"."${FieldNameRevision.content}`,
+        `${TableRevision}"."${FieldNameRevision.title}`,
+        `${TableUser}"."${FieldNameUser.username}`,
+        `${TableUser}"."${FieldNameUser.guestUuid}`,
+        `${TableRevisionTag}"."${FieldNameRevisionTag.tag}`,
+      ],
+      TableRevision,
+      FieldNameRevision.noteId,
+      [
+        {
+          [FieldNameRevision.uuid]: mockRevisionUuid1,
+          [FieldNameRevision.createdAt]: mockCreatedAt1,
+          [FieldNameRevision.content]: mockContent1,
+          [FieldNameRevision.title]: mockTitle,
+          [FieldNameRevision.description]: mockDescription,
+          [FieldNameUser.username]: mockUsername,
+          [FieldNameUser.guestUuid]: null,
+          [FieldNameRevisionTag.tag]: mockTag1,
+        },
+      ],
+      [
+        {
+          joinTable: TableRevisionTag,
+          keyLeft: FieldNameRevisionTag.revisionUuid,
+          keyRight: FieldNameRevision.uuid,
+        },
+        {
+          joinTable: TableAuthorshipInfo,
+          keyLeft: FieldNameAuthorshipInfo.revisionUuid,
+          keyRight: FieldNameRevision.uuid,
+        },
+        {
+          joinTable: TableUser,
+          otherTable: TableAuthorshipInfo,
+          keyLeft: FieldNameUser.id,
+          keyRight: FieldNameAuthorshipInfo.authorId,
+        },
+      ],
     );
-    noteRepo = module.get<Repository<Note>>(getRepositoryToken(Note));
-  });
-
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-
-  describe('getRevision', () => {
-    it('returns a revision', async () => {
-      const note = Mock.of<Note>({});
-      const revision = Mock.of<Revision>({});
-      jest.spyOn(revisionRepo, 'findOne').mockResolvedValueOnce(revision);
-      expect(await service.getRevision(note, 1)).toBe(revision);
-    });
-    it('throws if the revision is not in the databse', async () => {
-      jest.spyOn(revisionRepo, 'findOne').mockResolvedValueOnce(null);
-      await expect(service.getRevision({} as Note, 1)).rejects.toThrow(
-        NotInDBError,
-      );
-    });
+    const results = await service.getAllRevisionMetadataDto(mockNoteId);
+    expect(results).toHaveLength(1);
+    expect(results[0].uuid).toBe(mockRevisionUuid1);
+    expect(results[0].createdAt).toBe(mockCreatedAt1Iso);
+    expect(results[0].length).toBe(mockContent1.length);
+    expect(results[0].authorUsernames).toHaveLength(1);
+    expect(results[0].authorUsernames[0]).toBe(mockUsername);
+    expect(results[0].authorGuestUuids).toHaveLength(0);
+    expect(results[0].title).toBe(mockTitle);
+    expect(results[0].description).toBe(mockDescription);
+    expect(results[0].tags).toHaveLength(1);
+    expect(results[0].tags[0]).toBe(mockTag1);
+    expectBindings(tracker, 'select', [[mockNoteId]]);
   });
 
   describe('purgeRevisions', () => {
-    let revisions: Revision[];
-    let note: Note;
+    let spyOnGetPrimaryAlias: jest.SpyInstance;
+    // eslint-disable-next-line func-style
+    const buildMockSelect = (returnValues: unknown) => {
+      mockSelect(
+        tracker,
+        [],
+        TableRevision,
+        [FieldNameRevision.noteId],
+        returnValues,
+      );
+    };
 
     beforeEach(() => {
-      note = Mock.of<Note>({ publicId: 'test-note', id: 1 });
-      revisions = [];
-
-      jest
-        .spyOn(revisionRepo, 'remove')
-        .mockImplementation(
-          <T extends Revision | Revision[]>(deleteEntities: T): Promise<T> => {
-            const newRevisions = revisions.filter((item: Revision) =>
-              Array.isArray(deleteEntities)
-                ? !deleteEntities.includes(item)
-                : deleteEntities !== item,
-            );
-            revisions = newRevisions;
-            note.revisions = Promise.resolve(newRevisions);
-            return Promise.resolve(deleteEntities);
-          },
-        );
+      spyOnGetPrimaryAlias = jest.spyOn(
+        aliasService,
+        'getPrimaryAliasByNoteId',
+      );
     });
 
-    it('purges the revision history', async () => {
-      const revision1 = Mock.of<Revision>({
-        id: 1,
-        note: Promise.resolve(note),
-      });
-      const revision2 = Mock.of<Revision>({
-        id: 2,
-        note: Promise.resolve(note),
-      });
-      const revision3 = Mock.of<Revision>({
-        id: 3,
-        note: Promise.resolve(note),
-        content:
-          '---\ntitle: new title\ndescription: new description\ntags: [ "tag1" ]\n---\nnew content\n',
-      });
-      revisions = [revision1, revision2, revision3];
-      note.revisions = Promise.resolve(revisions);
-
-      jest.spyOn(revisionRepo, 'find').mockResolvedValueOnce(revisions);
-      jest.spyOn(service, 'getLatestRevision').mockResolvedValueOnce(revision3);
-
-      jest.spyOn(revisionRepo, 'save').mockResolvedValue(Mock.of<Revision>());
-
-      // expected to return all the purged revisions
-      expect(await service.purgeRevisions(note)).toStrictEqual([
-        revision1,
-        revision2,
+    it('returns immediately, when there are no revisions', async () => {
+      buildMockSelect([]);
+      await service.purgeRevisions(mockNoteId);
+      expect(spyOnGetPrimaryAlias).toHaveBeenCalledTimes(0);
+      expectBindings(tracker, 'select', [[mockNoteId]]);
+      expectBindings(tracker, 'delete', [[]], false, true);
+      expectBindings(tracker, 'update', [[]], false, true);
+    });
+    it('correctly purges all, but the last revisions', async () => {
+      // The typecast is required since jest does not see all signatures of the mocked function
+      // and assumes using the first signature, which is wrong here and leads to a type error
+      (
+        jest.spyOn(diffModule, 'createPatch') as unknown as jest.MockedFunction<
+          (a: string, b: string, c: string) => string
+        >
+      ).mockImplementation((a, b, c) => `${mockPatch}\n${a}\n${b}\n${c}`);
+      buildMockSelect([
+        {
+          [FieldNameRevision.uuid]: mockRevisionUuid2,
+          [FieldNameRevision.noteId]: mockNoteId,
+          [FieldNameRevision.content]: mockContent2,
+        },
+        {
+          [FieldNameRevision.uuid]: mockRevisionUuid1,
+          [FieldNameRevision.noteId]: mockNoteId,
+          [FieldNameRevision.content]: mockContent1,
+        },
       ]);
-
-      expect(revisions).toStrictEqual([revision3]);
-      expect(revision3.patch).toMatchSnapshot();
-    });
-    it('has no effect on revision history when a single revision is present', async () => {
-      const revision1 = Mock.of<Revision>({ id: 1 });
-      revisions = [revision1];
-      note.revisions = Promise.resolve(revisions);
-
-      jest.spyOn(revisionRepo, 'find').mockResolvedValueOnce(revisions);
-      jest.spyOn(service, 'getLatestRevision').mockResolvedValueOnce(revision1);
-
-      // expected to return all the purged revisions
-      expect(await service.purgeRevisions(note)).toHaveLength(0);
-
-      // expected to have only the latest revision
-      const updatedRevisions: Revision[] = [revision1];
-      expect(revisions).toEqual(updatedRevisions);
-    });
-  });
-
-  describe('getRevisionUserInfo', () => {
-    it('counts users correctly', async () => {
-      const user = User.create('test', 'test') as User;
-      const author = Author.create(123) as Author;
-      author.user = Promise.resolve(user);
-      const anonAuthor = Author.create(123) as Author;
-      const anonAuthor2 = Author.create(123) as Author;
-      const edits = [Edit.create(author, 12, 15) as Edit];
-      edits.push(Edit.create(author, 16, 18) as Edit);
-      edits.push(Edit.create(author, 29, 20) as Edit);
-      edits.push(Edit.create(anonAuthor, 29, 20) as Edit);
-      edits.push(Edit.create(anonAuthor, 29, 20) as Edit);
-      edits.push(Edit.create(anonAuthor2, 29, 20) as Edit);
-      const revision = Mock.of<Revision>({});
-      revision.edits = Promise.resolve(edits);
-
-      const userInfo = await service.getRevisionUserInfo(revision);
-      expect(userInfo.usernames.length).toEqual(1);
-      expect(userInfo.anonymousUserCount).toEqual(2);
+      mockDelete(tracker, TableRevision, [FieldNameRevision.uuid], 1);
+      mockUpdate(
+        tracker,
+        TableRevision,
+        [FieldNameRevision.patch],
+        FieldNameRevision.uuid,
+        1,
+      );
+      spyOnGetPrimaryAlias.mockResolvedValueOnce(mockPrimaryAlias);
+      await service.purgeRevisions(mockNoteId);
+      expectBindings(tracker, 'select', [[mockNoteId]]);
+      expectBindings(tracker, 'delete', [[mockRevisionUuid1]]);
+      expectBindings(tracker, 'update', [
+        [
+          `${mockPatch}\n${mockPrimaryAlias}\n\n${mockContent2}`,
+          mockRevisionUuid2,
+        ],
+      ]);
     });
   });
 
-  describe('toRevisionMetadataDto', () => {
-    it('converts a revision', async () => {
-      const revision = Mock.of<Revision>({
-        id: 3246,
-        content: 'mockContent',
-        length: 1854,
-        createdAt: new Date('2020-05-20T09:58:00.000Z'),
-        title: 'mockTitle',
-        tags: Promise.resolve([Mock.of<Tag>({ name: 'mockTag' })]),
-        description: 'mockDescription',
-        patch: 'mockPatch',
-        edits: Promise.resolve([
-          Mock.of<Edit>({
-            endPos: 93,
-            startPos: 34,
-            createdAt: new Date('2020-03-04T20:12:00.000Z'),
-            updatedAt: new Date('2021-12-10T09:45:00.000Z'),
-            author: Promise.resolve(
-              Mock.of<Author>({
-                user: Promise.resolve(
-                  Mock.of<User>({
-                    username: 'mockusername',
-                  }),
-                ),
-              }),
-            ),
-          }),
-        ]),
+  describe('getRevisionDto', () => {
+    it('throws a NotInDBError when revision is not found', async () => {
+      mockSelect(
+        tracker,
+        [
+          FieldNameRevision.uuid,
+          FieldNameRevision.createdAt,
+          FieldNameRevision.description,
+          FieldNameRevision.content,
+          FieldNameRevision.title,
+          FieldNameRevision.patch,
+        ],
+        TableRevision,
+        FieldNameRevision.uuid,
+        [],
+      );
+      await expect(service.getRevisionDto(mockRevisionUuid1)).rejects.toThrow(
+        NotInDBError,
+      );
+      expectBindings(tracker, 'select', [[mockRevisionUuid1]], true);
+    });
+
+    it('correctly returns the fetched revision', async () => {
+      mockSelect(
+        tracker,
+        [
+          FieldNameRevision.uuid,
+          FieldNameRevision.createdAt,
+          FieldNameRevision.description,
+          FieldNameRevision.content,
+          FieldNameRevision.title,
+          FieldNameRevision.patch,
+        ],
+        TableRevision,
+        FieldNameRevision.uuid,
+        [
+          {
+            [FieldNameRevision.uuid]: mockRevisionUuid1,
+            [FieldNameRevision.noteId]: mockNoteId,
+            [FieldNameRevision.patch]: mockPatch,
+            [FieldNameRevision.content]: mockContent1,
+            [FieldNameRevision.yjsStateVector]: null,
+            [FieldNameRevision.noteType]: NoteType.DOCUMENT,
+            [FieldNameRevision.title]: mockTitle,
+            [FieldNameRevision.description]: mockDescription,
+            [FieldNameRevision.createdAt]: mockCreatedAt1,
+          },
+        ],
+      );
+      const result = await service.getRevisionDto(mockRevisionUuid1);
+      expect(result).toStrictEqual({
+        uuid: mockRevisionUuid1,
+        content: mockContent1,
+        length: mockContent1.length,
+        createdAt: mockCreatedAt1Iso,
+        title: mockTitle,
+        description: mockDescription,
+        patch: mockPatch,
       });
-      expect(await service.toRevisionMetadataDto(revision)).toMatchSnapshot();
+      expectBindings(tracker, 'select', [[mockRevisionUuid1]], true);
     });
   });
 
-  describe('toRevisionDto', () => {
-    it('converts a revision', async () => {
-      const revision = Mock.of<Revision>({
-        id: 3246,
-        content: 'mockContent',
-        length: 1854,
-        createdAt: new Date('2020-05-20T09:58:00.000Z'),
-        title: 'mockTitle',
-        tags: Promise.resolve([Mock.of<Tag>({ name: 'mockTag' })]),
-        description: 'mockDescription',
-        patch: 'mockPatch',
-        edits: Promise.resolve([
-          Mock.of<Edit>({
-            endPos: 93,
-            startPos: 34,
-            createdAt: new Date('2020-03-04T22:32:00.000Z'),
-            updatedAt: new Date('2021-02-10T12:23:00.000Z'),
-            author: Promise.resolve(
-              Mock.of<Author>({
-                user: Promise.resolve(
-                  Mock.of<User>({
-                    username: 'mockusername',
-                  }),
-                ),
-              }),
-            ),
-          }),
-        ]),
-      });
-      expect(await service.toRevisionDto(revision)).toMatchSnapshot();
+  describe('getLatestRevision', () => {
+    it('throws a NotInDBError when no revisions are found for the note', async () => {
+      mockSelect(tracker, [], TableRevision, FieldNameRevision.noteId, []);
+      await expect(service.getLatestRevision(mockNoteId)).rejects.toThrow(
+        NotInDBError,
+      );
+      expectBindings(tracker, 'select', [[mockNoteId]], true);
     });
+
+    it('correctly returns the last revision', async () => {
+      const mockRevision1 = {
+        [FieldNameRevision.uuid]: mockRevisionUuid1,
+        [FieldNameRevision.noteId]: mockNoteId,
+        [FieldNameRevision.patch]: mockPatch,
+        [FieldNameRevision.content]: mockContent1,
+        [FieldNameRevision.yjsStateVector]: null,
+        [FieldNameRevision.noteType]: NoteType.DOCUMENT,
+        [FieldNameRevision.title]: mockTitle,
+        [FieldNameRevision.description]: mockDescription,
+        [FieldNameRevision.createdAt]: mockCreatedAt1,
+      };
+      const mockRevision2 = structuredClone(mockRevision1);
+      mockRevision2[FieldNameRevision.uuid] = mockRevisionUuid2;
+      mockRevision2[FieldNameRevision.createdAt] = mockCreatedAt2;
+      mockSelect(tracker, [], TableRevision, FieldNameRevision.noteId, [
+        mockRevision2,
+        mockRevision1,
+      ]);
+      const result = await service.getLatestRevision(mockNoteId);
+      expect(result).toStrictEqual(mockRevision2);
+      expectBindings(tracker, 'select', [[mockNoteId]], true);
+    });
+  });
+
+  it('getRevisionUserInfo', async () => {
+    mockSelect(
+      tracker,
+      [
+        `${TableUser}"."${FieldNameUser.username}`,
+        `${TableUser}"."${FieldNameUser.guestUuid}`,
+        `${TableAuthorshipInfo}"."${FieldNameAuthorshipInfo.createdAt}`,
+        `${TableAuthorshipInfo}"."${FieldNameAuthorshipInfo.authorId}`,
+      ],
+      TableAuthorshipInfo,
+      FieldNameAuthorshipInfo.revisionUuid,
+      [
+        {
+          [FieldNameUser.username]: mockUsername,
+          [FieldNameUser.guestUuid]: null,
+          [FieldNameAuthorshipInfo.createdAt]: mockCreatedAt1,
+          [FieldNameAuthorshipInfo.authorId]: 1,
+        },
+        {
+          [FieldNameUser.username]: null,
+          [FieldNameUser.guestUuid]: mockGuestUuid,
+          [FieldNameAuthorshipInfo.createdAt]: mockCreatedAt2,
+          [FieldNameAuthorshipInfo.authorId]: 2,
+        },
+      ],
+      [
+        {
+          joinTable: TableUser,
+          otherTable: TableAuthorshipInfo,
+          keyLeft: FieldNameUser.id,
+          keyRight: FieldNameAuthorshipInfo.authorId,
+        },
+      ],
+    );
+    const result = await service.getRevisionUserInfo(mockRevisionUuid1);
+    expect(result.users).toHaveLength(1);
+    expect(result.users[0].username).toBe(mockUsername);
+    expect(result.users[0].createdAt).toBe(mockCreatedAt1);
+    expect(result.guestUserCount).toBe(1);
+    expectBindings(tracker, 'select', [[mockRevisionUuid1]]);
   });
 
   describe('createRevision', () => {
-    it('creates a new revision', async () => {
-      const note = Mock.of<Note>({ publicId: 'test-note', id: 1 });
-      const oldContent = 'old content\n';
-      const newContent =
-        '---\ntitle: new title\ndescription: new description\ntags: [ "tag1" ]\n---\nnew content\n';
+    const lastRevision = {
+      [FieldNameRevision.uuid]: mockRevisionUuid1,
+      [FieldNameRevision.noteId]: mockNoteId,
+      [FieldNameRevision.patch]: mockPatch,
+      [FieldNameRevision.content]: mockContent1,
+      [FieldNameRevision.yjsStateVector]: null,
+      [FieldNameRevision.noteType]: NoteType.DOCUMENT,
+      [FieldNameRevision.title]: mockTitle,
+      [FieldNameRevision.description]: mockDescription,
+      [FieldNameRevision.createdAt]: mockCreatedAt1,
+    };
 
-      const oldRevision = Mock.of<Revision>({ content: oldContent, id: 1 });
-      jest.spyOn(revisionRepo, 'findOne').mockResolvedValueOnce(oldRevision);
-      jest
-        .spyOn(revisionRepo, 'save')
-        .mockImplementation((revision) =>
-          Promise.resolve(revision as Revision),
-        );
-
-      const createdRevision = await service.createRevision(note, newContent);
-      expect(createdRevision).not.toBeUndefined();
-      expect(createdRevision?.content).toBe(newContent);
-      await expect(createdRevision?.tags).resolves.toMatchSnapshot();
-      expect(createdRevision?.title).toBe('new title');
-      expect(createdRevision?.description).toBe('new description');
-      await expect(createdRevision?.note).resolves.toBe(note);
-      expect(createdRevision?.patch).toMatchSnapshot();
-    });
-
-    it("won't create a revision if content is unchanged", async () => {
-      const note = Mock.of<Note>({ id: 1 });
-      const oldContent = 'old content\n';
-
-      const oldRevision = Mock.of<Revision>({ content: oldContent, id: 1 });
-      jest.spyOn(revisionRepo, 'findOne').mockResolvedValueOnce(oldRevision);
-      const saveSpy = jest.spyOn(revisionRepo, 'save').mockImplementation();
-
-      const createdRevision = await service.createRevision(note, oldContent);
-      expect(createdRevision).toBeUndefined();
-      expect(saveSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('createAndSaveRevision', () => {
-    it('creates and saves a new revision', async () => {
-      const newRevision = Mock.of<Revision>();
-      const createRevisionSpy = jest
-        .spyOn(service, 'createRevision')
-        .mockResolvedValue(newRevision);
-      const repoSaveSpy = jest
-        .spyOn(revisionRepo, 'save')
-        .mockResolvedValue(newRevision);
-
-      const note = Mock.of<Note>({});
-      const newContent = 'MockContent';
-
-      const yjsState = [0, 1, 2, 3, 4, 5];
-
-      await service.createAndSaveRevision(note, newContent, yjsState);
-      expect(createRevisionSpy).toHaveBeenCalledWith(
-        note,
-        newContent,
-        yjsState,
-      );
-      expect(repoSaveSpy).toHaveBeenCalledWith(newRevision);
-    });
-
-    it("doesn't save if no revision has been created", async () => {
-      const createRevisionSpy = jest
-        .spyOn(service, 'createRevision')
-        .mockResolvedValue(undefined);
-      const repoSaveSpy = jest
-        .spyOn(revisionRepo, 'save')
-        .mockRejectedValue(new Error("shouldn't have been called"));
-
-      const note = Mock.of<Note>({});
-      const newContent = 'MockContent';
-      const yjsState = [0, 1, 2, 3, 4, 5];
-
-      await service.createAndSaveRevision(note, newContent, yjsState);
-      expect(createRevisionSpy).toHaveBeenCalledWith(
-        note,
-        newContent,
-        yjsState,
-      );
-      expect(repoSaveSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('auto remove old revisions', () => {
     beforeEach(() => {
-      jest.spyOn(service, 'removeOldRevisions');
+      jest.spyOn(service, 'getLatestRevision').mockResolvedValue(lastRevision);
+      jest
+        .spyOn(aliasService, 'getPrimaryAliasByNoteId')
+        .mockResolvedValue(mockPrimaryAlias);
+      jest
+        .spyOn(
+          utilsExtractRevisionMetadataFromContentModule,
+          'extractRevisionMetadataFromContent',
+        )
+        .mockReturnValue({
+          title: mockTitle,
+          description: mockDescription,
+          tags: [],
+          noteType: NoteType.DOCUMENT,
+        });
+      // This wrong typecast is required since TypeScript does not see that
+      // `uuid.v7()` returns a string or a Uint8Array based on the given options
+      jest
+        .spyOn(uuidModule, 'v7')
+        .mockReturnValue(mockRevisionUuid1 as unknown as Uint8Array);
+      // The typecast is required since jest does not see all signatures of the mocked function
+      // and assumes using the first signature, which is wrong here and leads to a type error
+      (
+        jest.spyOn(diffModule, 'createPatch') as unknown as jest.MockedFunction<
+          (a: string, b: string, c: string) => string
+        >
+      ).mockImplementation((a, b, c) => `${mockPatch}\n${a}\n${b}\n${c}`);
     });
 
-    it('handleCron should call removeOldRevisions', async () => {
-      await service.handleRevisionCleanup();
-      expect(service.removeOldRevisions).toHaveBeenCalledTimes(1);
+    it('returns undefined when content did not change', async () => {
+      jest.spyOn(service, 'getLatestRevision').mockResolvedValue(lastRevision);
+      await expect(
+        service.createRevision(mockNoteId, mockContent1, false),
+      ).resolves.toBeUndefined();
     });
 
-    it('handleTimeout should call removeOldRevisions', async () => {
-      await service.handleRevisionCleanupTimeout();
-      expect(service.removeOldRevisions).toHaveBeenCalledTimes(1);
+    it('uses a correct diff when an old revision is present', async () => {
+      mockInsert(
+        tracker,
+        TableRevision,
+        [
+          FieldNameRevision.content,
+          FieldNameRevision.description,
+          FieldNameRevision.noteId,
+          FieldNameRevision.noteType,
+          FieldNameRevision.patch,
+          FieldNameRevision.title,
+          FieldNameRevision.uuid,
+          FieldNameRevision.yjsStateVector,
+        ],
+        [mockRevisionUuid1],
+      );
+      await service.createRevision(mockNoteId, mockContent2, false);
+      expectBindings(tracker, 'insert', [
+        [
+          mockContent2,
+          mockDescription,
+          mockNoteId,
+          NoteType.DOCUMENT,
+          `${mockPatch}\n${mockPrimaryAlias}\n${mockContent1}\n${mockContent2}`,
+          mockTitle,
+          mockRevisionUuid1,
+          null,
+        ],
+      ]);
     });
+    it('creates a correct revision when no old revisions are present', async () => {
+      mockInsert(
+        tracker,
+        TableRevision,
+        [
+          FieldNameRevision.content,
+          FieldNameRevision.description,
+          FieldNameRevision.noteId,
+          FieldNameRevision.noteType,
+          FieldNameRevision.patch,
+          FieldNameRevision.title,
+          FieldNameRevision.uuid,
+          FieldNameRevision.yjsStateVector,
+        ],
+        [mockRevisionUuid1],
+      );
+      await service.createRevision(mockNoteId, mockContent1, true);
+      expectBindings(tracker, 'insert', [
+        [
+          mockContent1,
+          mockDescription,
+          mockNoteId,
+          NoteType.DOCUMENT,
+          `${mockPatch}\n${mockPrimaryAlias}\n\n${mockContent1}`,
+          mockTitle,
+          mockRevisionUuid1,
+          null,
+        ],
+      ]);
+    });
+    it('throws a GenericDBError when the revision could not be inserted', async () => {
+      mockInsert(
+        tracker,
+        TableRevision,
+        [
+          FieldNameRevision.content,
+          FieldNameRevision.description,
+          FieldNameRevision.noteId,
+          FieldNameRevision.noteType,
+          FieldNameRevision.patch,
+          FieldNameRevision.title,
+          FieldNameRevision.uuid,
+          FieldNameRevision.yjsStateVector,
+        ],
+        [],
+      );
+      await expect(
+        service.createRevision(mockNoteId, mockContent1, true),
+      ).rejects.toThrow(GenericDBError);
+    });
+  });
+
+  it('getTagsByRevisionUuid correctly returns tags', async () => {
+    mockSelect(
+      tracker,
+      [FieldNameRevisionTag.tag],
+      TableRevisionTag,
+      FieldNameRevisionTag.revisionUuid,
+      [
+        {
+          [FieldNameRevisionTag.tag]: mockTag1,
+        },
+        {
+          [FieldNameRevisionTag.tag]: mockTag2,
+        },
+      ],
+    );
+    const results = await service.getTagsByRevisionUuid(mockRevisionUuid1);
+    expect(results).toHaveLength(2);
+    expect(results[0]).toBe(mockTag1);
+    expect(results[1]).toBe(mockTag2);
+    expectBindings(tracker, 'select', [[mockRevisionUuid1]]);
   });
 
   describe('removeOldRevisions', () => {
-    let note: Note;
-    let notes: Note[];
-    let revisions: Revision[];
-    let oldRevisions: Revision[];
-    const retentionDays = 30;
-
+    const now = 1758653425;
     beforeEach(() => {
-      noteConfig.revisionRetentionDays = retentionDays;
-
-      note = Mock.of<Note>({ publicId: 'test-note', id: 1 });
-      notes = [note];
+      jest.useFakeTimers();
+      jest.setSystemTime(now);
+      noteConfig.revisionRetentionDays = 1;
     });
-
     afterEach(() => {
-      jest.clearAllMocks();
+      jest.useRealTimers();
     });
-
-    it('remove all revisions except latest revision', async () => {
-      const date1 = new Date();
-      const date2 = new Date();
-      const date3 = new Date();
-      date1.setDate(date1.getDate() - retentionDays - 2);
-      date2.setDate(date2.getDate() - retentionDays - 1);
-
-      const revision1 = Mock.of<Revision>({
-        id: 1,
-        createdAt: date1,
-        note: Promise.resolve(note),
-      });
-      const revision2 = Mock.of<Revision>({
-        id: 2,
-        createdAt: date2,
-        note: Promise.resolve(note),
-        content: 'old content\n',
-      });
-      const revision3 = Mock.of<Revision>({
-        id: 3,
-        createdAt: date3,
-        note: Promise.resolve(note),
-        content:
-          '---\ntitle: new title\ndescription: new description\ntags: [ "tag1" ]\n---\nnew content\n',
-      });
-      revision3.patch = createPatch(
-        note.publicId,
-        revision2.content,
-        revision3.content,
-      );
-
-      revisions = [revision1, revision2, revision3];
-      oldRevisions = [revision1, revision2];
-
-      jest.spyOn(noteRepo, 'find').mockResolvedValueOnce(notes);
-      jest.spyOn(revisionRepo, 'find').mockResolvedValueOnce(revisions);
-      jest
-        .spyOn(revisionRepo, 'remove')
-        .mockImplementationOnce(async (entry, _) => {
-          expect(entry).toEqual(oldRevisions);
-          return entry;
-        });
-      jest.spyOn(revisionRepo, 'save').mockResolvedValue(revision3);
-
-      await service.removeOldRevisions();
-      expect(revision3.patch).toMatchSnapshot();
-    });
-
-    it('remove a part of old revisions', async () => {
-      const date1 = new Date();
-      const date2 = new Date();
-      const date3 = new Date();
-      date1.setDate(date1.getDate() - retentionDays);
-      date2.setDate(date2.getDate() - retentionDays + 1);
-
-      const revision1 = Mock.of<Revision>({
-        id: 1,
-        createdAt: date1,
-        note: Promise.resolve(note),
-        content: 'old content\n',
-      });
-      const revision2 = Mock.of<Revision>({
-        id: 2,
-        createdAt: date2,
-        note: Promise.resolve(note),
-        content:
-          '---\ntitle: new title\ndescription: new description\ntags: [ "tag1" ]\n---\nnew content\n',
-      });
-      const revision3 = Mock.of<Revision>({
-        id: 3,
-        createdAt: date3,
-        note: Promise.resolve(note),
-      });
-      revision2.patch = createPatch(
-        note.publicId,
-        revision1.content,
-        revision2.content,
-      );
-
-      revisions = [revision1, revision2, revision3];
-      oldRevisions = [revision1];
-
-      jest.spyOn(noteRepo, 'find').mockResolvedValueOnce(notes);
-      jest.spyOn(revisionRepo, 'find').mockResolvedValueOnce(revisions);
-      jest
-        .spyOn(revisionRepo, 'remove')
-        .mockImplementationOnce(async (entry, _) => {
-          expect(entry).toEqual(oldRevisions);
-          return entry;
-        });
-      jest.spyOn(revisionRepo, 'save').mockResolvedValue(revision2);
-
-      await service.removeOldRevisions();
-      expect(revision2.patch).toMatchSnapshot();
-    });
-
-    it('do nothing when only one revision', async () => {
-      const date = new Date();
-      date.setDate(date.getDate() - retentionDays * 2);
-
-      const revision1 = Mock.of<Revision>({
-        id: 1,
-        createdAt: date,
-        note: Promise.resolve(note),
-      });
-      revisions = [revision1];
-      oldRevisions = [];
-
-      jest.spyOn(noteRepo, 'find').mockResolvedValueOnce(notes);
-      jest.spyOn(revisionRepo, 'find').mockResolvedValueOnce(revisions);
-      const spyOnRemove = jest.spyOn(revisionRepo, 'remove');
-
-      await service.removeOldRevisions();
-      expect(spyOnRemove).toHaveBeenCalledTimes(0);
-    });
-
-    it('do nothing when retention days config is zero', async () => {
+    it("doesn't run if revisionRetentionDays is set to <= 0", async () => {
       noteConfig.revisionRetentionDays = 0;
-      const spyOnRemove = jest.spyOn(revisionRepo, 'remove');
-
       await service.removeOldRevisions();
-      expect(spyOnRemove).toHaveBeenCalledTimes(0);
+      expectBindings(tracker, 'delete', [[]], false, true);
+    });
+    it("doesn't update if no revisions were removed", async () => {
+      mockDelete(tracker, TableRevision, [FieldNameRevision.createdAt], []);
+      await service.removeOldRevisions();
+      expectBindings(tracker, 'delete', [[now - 24 * 60 * 60 * 1000]]);
+      expectBindings(tracker, 'select', [], false, true);
+    });
+    it('updates notes if revisions were deleted', async () => {
+      // The typecast is required since jest does not see all signatures of the mocked function
+      // and assumes using the first signature, which is wrong here and leads to a type error
+      (
+        jest.spyOn(diffModule, 'createPatch') as unknown as jest.MockedFunction<
+          (a: string, b: string, c: string) => string
+        >
+      ).mockImplementation((a, b, c) => `${mockPatch}\n${a}\n${b}\n${c}`);
+      mockDelete(
+        tracker,
+        TableRevision,
+        [FieldNameRevision.createdAt],
+        [
+          {
+            [FieldNameRevision.noteId]: mockNoteId,
+          },
+        ],
+      );
+      mockSelect(
+        tracker,
+        [
+          FieldNameRevision.uuid,
+          FieldNameRevision.noteId,
+          FieldNameRevision.content,
+          FieldNameAlias.alias,
+        ],
+        TableRevision,
+        [FieldNameRevision.noteId, FieldNameAlias.isPrimary],
+        [
+          {
+            [FieldNameRevision.uuid]: mockRevisionUuid1,
+            [FieldNameRevision.noteId]: mockNoteId,
+            [FieldNameRevision.content]: mockContent1,
+            [FieldNameAlias.alias]: mockPrimaryAlias,
+          },
+        ],
+        [
+          {
+            joinTable: TableAlias,
+            keyLeft: FieldNameAlias.noteId,
+            keyRight: FieldNameRevision.noteId,
+          },
+        ],
+      );
+      mockUpdate(
+        tracker,
+        TableRevision,
+        [FieldNameRevision.patch],
+        FieldNameRevision.uuid,
+        1,
+      );
+      await service.removeOldRevisions();
+      expectBindings(tracker, 'delete', [[now - 24 * 60 * 60 * 1000]]);
+      expectBindings(tracker, 'select', [[mockNoteId, true]]);
+      expectBindings(tracker, 'update', [
+        [
+          `${mockPatch}\n${mockPrimaryAlias}\n\n${mockContent1}`,
+          mockRevisionUuid1,
+        ],
+      ]);
     });
   });
 });

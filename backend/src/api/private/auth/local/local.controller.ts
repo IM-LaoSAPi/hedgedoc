@@ -3,12 +3,8 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import {
-  LoginDto,
-  ProviderType,
-  RegisterDto,
-  UpdatePasswordDto,
-} from '@hedgedoc/commons';
+import { AuthProviderType } from '@hedgedoc/commons';
+import { FieldNameIdentity, FieldNameUser } from '@hedgedoc/database';
 import {
   Body,
   Controller,
@@ -21,17 +17,18 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 
 import { LocalService } from '../../../../auth/local/local.service';
-import {
-  RequestWithSession,
-  SessionGuard,
-} from '../../../../auth/session.guard';
+import { SessionGuard } from '../../../../auth/session.guard';
+import { LoginDto } from '../../../../dtos/login.dto';
+import { RegisterDto } from '../../../../dtos/register.dto';
+import { UpdatePasswordDto } from '../../../../dtos/update-password.dto';
+import { NoLocalIdentityError } from '../../../../errors/errors';
 import { ConsoleLoggerService } from '../../../../logger/console-logger.service';
-import { User } from '../../../../users/user.entity';
 import { UsersService } from '../../../../users/users.service';
-import { LoginEnabledGuard } from '../../../utils/login-enabled.guard';
-import { OpenApi } from '../../../utils/openapi.decorator';
-import { RegistrationEnabledGuard } from '../../../utils/registration-enabled.guard';
-import { RequestUser } from '../../../utils/request-user.decorator';
+import { OpenApi } from '../../../utils/decorators/openapi.decorator';
+import { RequestUserId } from '../../../utils/decorators/request-user-id.decorator';
+import { LoginEnabledGuard } from '../../../utils/guards/login-enabled.guard';
+import { RegistrationEnabledGuard } from '../../../utils/guards/registration-enabled.guard';
+import { RequestWithSession } from '../../../utils/request.type';
 
 @ApiTags('auth')
 @Controller('/auth/local')
@@ -52,34 +49,35 @@ export class LocalController {
     @Body() registerDto: RegisterDto,
   ): Promise<void> {
     await this.localIdentityService.checkPasswordStrength(registerDto.password);
-    const user = await this.usersService.createUser(
+    const userId = await this.localIdentityService.createUserWithLocalIdentity(
       registerDto.username,
-      registerDto.displayName,
-      null,
-      null,
-    );
-    await this.localIdentityService.createLocalIdentity(
-      user,
       registerDto.password,
+      registerDto.displayName,
     );
     // Log the user in after registration
-    request.session.authProviderType = ProviderType.LOCAL;
-    request.session.username = registerDto.username;
+    request.session.authProviderType = AuthProviderType.LOCAL;
+    request.session.userId = userId;
+    request.session.newUserData = undefined;
   }
 
   @UseGuards(LoginEnabledGuard, SessionGuard)
   @Put()
   @OpenApi(200, 400, 401)
   async updatePassword(
-    @RequestUser() user: User,
+    @RequestUserId() userId: number,
     @Body() changePasswordDto: UpdatePasswordDto,
   ): Promise<void> {
+    const user = await this.usersService.getUserById(userId);
+    const username = user[FieldNameUser.username];
+    if (username === null) {
+      throw new NoLocalIdentityError('User has no username assigned');
+    }
     await this.localIdentityService.checkLocalPassword(
-      user,
+      username,
       changePasswordDto.currentPassword,
     );
     await this.localIdentityService.updateLocalPassword(
-      user,
+      userId,
       changePasswordDto.newPassword,
     );
   }
@@ -93,15 +91,15 @@ export class LocalController {
     @Body() loginDto: LoginDto,
   ): Promise<void> {
     try {
-      const user = await this.usersService.getUserByUsername(loginDto.username);
-      await this.localIdentityService.checkLocalPassword(
-        user,
+      const identity = await this.localIdentityService.checkLocalPassword(
+        loginDto.username,
         loginDto.password,
       );
-      request.session.username = loginDto.username;
-      request.session.authProviderType = ProviderType.LOCAL;
+      request.session.userId = identity[FieldNameIdentity.userId];
+      request.session.authProviderType = AuthProviderType.LOCAL;
+      request.session.newUserData = undefined;
     } catch (error) {
-      this.logger.error(`Failed to log in user: ${String(error)}`);
+      this.logger.log(`Failed to log in user: ${String(error)}`, 'login');
       throw new UnauthorizedException('Invalid username or password');
     }
   }

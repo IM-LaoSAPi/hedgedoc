@@ -3,8 +3,8 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import type { FrontendConfigDto } from '@hedgedoc/commons'
-import { ProviderType, GuestAccess } from '@hedgedoc/commons'
+import type { FrontendConfigInterface } from '@hedgedoc/commons'
+import { AuthProviderType, PermissionLevel } from '@hedgedoc/commons'
 import {
   HttpMethod,
   respondToMatchingRequest,
@@ -13,7 +13,7 @@ import {
 import { isTestMode } from '../../../utils/test-modes'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-const initialConfig: FrontendConfigDto = {
+const initialConfig: FrontendConfigInterface = {
   allowRegister: true,
   allowProfileEdits: true,
   allowChooseUsername: true,
@@ -21,7 +21,7 @@ const initialConfig: FrontendConfigDto = {
     name: 'DEMO Corp',
     logo: '/public/img/demo.png'
   },
-  guestAccess: GuestAccess.WRITE,
+  guestAccess: PermissionLevel.WRITE,
   useImageProxy: false,
   specialUrls: {
     privacy: 'https://example.com/privacy',
@@ -40,16 +40,16 @@ const initialConfig: FrontendConfigDto = {
   maxDocumentLength: isTestMode ? 200 : 1000000,
   authProviders: [
     {
-      type: ProviderType.LOCAL
+      type: AuthProviderType.LOCAL
     },
     {
-      type: ProviderType.LDAP,
+      type: AuthProviderType.LDAP,
       identifier: 'test-ldap',
       providerName: 'Test LDAP',
       theme: null
     },
     {
-      type: ProviderType.OIDC,
+      type: AuthProviderType.OIDC,
       identifier: 'test-oidc',
       providerName: 'Test OIDC',
       theme: null
@@ -57,10 +57,10 @@ const initialConfig: FrontendConfigDto = {
   ]
 }
 
-let currentConfig: FrontendConfigDto = initialConfig
+let currentConfig: FrontendConfigInterface = initialConfig
 
 const handler = (req: NextApiRequest, res: NextApiResponse) => {
-  const responseSuccessful = respondToMatchingRequest<FrontendConfigDto>(
+  const responseSuccessful = respondToMatchingRequest<FrontendConfigInterface>(
     HttpMethod.GET,
     req,
     res,
@@ -69,10 +69,10 @@ const handler = (req: NextApiRequest, res: NextApiResponse) => {
     false
   )
   if (!responseSuccessful) {
-    respondToTestRequest<FrontendConfigDto>(req, res, () => {
+    respondToTestRequest<FrontendConfigInterface>(req, res, () => {
       currentConfig = {
         ...initialConfig,
-        ...(req.body as FrontendConfigDto)
+        ...(req.body as FrontendConfigInterface)
       }
       return currentConfig
     })

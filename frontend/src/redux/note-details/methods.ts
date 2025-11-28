@@ -6,7 +6,7 @@
 import { store } from '..'
 import { getNoteMetadata } from '../../api/notes'
 import type { CursorSelection } from '../../components/editor-page/editor-pane/tool-bar/formatters/types/cursor-selection'
-import type { NoteDto, NotePermissionsDto } from '@hedgedoc/commons'
+import type { NoteInterface, NotePermissionsInterface } from '@hedgedoc/commons'
 import { noteDetailsActionsCreator } from './slice'
 
 /**
@@ -21,9 +21,10 @@ export const setNoteContent = (content: string): void => {
 /**
  * Sets the note metadata for the current note from an API response DTO to the redux.
  * @param apiResponse The NoteDTO received from the API to store into redux.
+ * @param noteId The ID of the note being loaded.
  */
-export const setNoteDataFromServer = (apiResponse: NoteDto): void => {
-  const action = noteDetailsActionsCreator.setNoteDataFromServer(apiResponse)
+export const setNoteDataFromServer = (apiResponse: NoteInterface, noteId: string): void => {
+  const action = noteDetailsActionsCreator.setNoteDataFromServer({ note: apiResponse, noteId })
   store.dispatch(action)
 }
 
@@ -31,7 +32,7 @@ export const setNoteDataFromServer = (apiResponse: NoteDto): void => {
  * Sets the note permissions for the current note from an API response DTO to the redux.
  * @param apiResponse The NotePermissionsDTO received from the API to store into redux.
  */
-export const setNotePermissionsFromServer = (apiResponse: NotePermissionsDto): void => {
+export const setNotePermissionsFromServer = (apiResponse: NotePermissionsInterface): void => {
   const action = noteDetailsActionsCreator.setNotePermissionsFromServer(apiResponse)
   store.dispatch(action)
 }
@@ -58,7 +59,7 @@ export const updateMetadata = async (): Promise<void> => {
   if (!noteDetails) {
     return
   }
-  const updatedMetadata = await getNoteMetadata(noteDetails.id)
+  const updatedMetadata = await getNoteMetadata(noteDetails.primaryAlias)
   const action = noteDetailsActionsCreator.updateMetadata(updatedMetadata)
   store.dispatch(action)
 }

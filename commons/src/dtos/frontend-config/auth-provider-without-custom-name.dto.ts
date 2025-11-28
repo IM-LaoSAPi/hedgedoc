@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  */
 import { z } from 'zod'
-import { ProviderType } from '../auth/index.js'
+import { AuthProviderType } from '../auth/index.js'
 
 export const AuthProviderWithoutCustomNameSchema = z
   .object({
     type: z
-      .literal(ProviderType.LOCAL)
+      .literal(AuthProviderType.LOCAL)
       .describe('The type of the auth provider'),
   })
   .describe('Represents the local authentication provider')
 
-export type AuthProviderWithoutCustomNameDto = z.infer<
+export type AuthProviderWithoutCustomNameInterface = z.infer<
   typeof AuthProviderWithoutCustomNameSchema
 >

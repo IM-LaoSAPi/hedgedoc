@@ -1,112 +1,222 @@
 /*
- * SPDX-FileCopyrightText: 2022 The HedgeDoc developers (see AUTHORS file)
+ * SPDX-FileCopyrightText: 2025 The HedgeDoc developers (see AUTHORS file)
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+import {
+  FieldNameGroup,
+  FieldNameGroupUser,
+  Group,
+  TableGroup,
+  TableGroupUser,
+} from '@hedgedoc/database';
+import { Provider } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import type { Tracker } from 'knex-mock-client';
 
 import appConfigMock from '../config/mock/app.config.mock';
+import databaseConfigMock from '../config/mock/database.config.mock';
+import { expectBindings } from '../database/mock/expect-bindings';
+import { mockInsert, mockSelect } from '../database/mock/mock-queries';
+import { mockKnexDb } from '../database/mock/provider';
 import { AlreadyInDBError, NotInDBError } from '../errors/errors';
 import { LoggerModule } from '../logger/logger.module';
-import { Group } from './group.entity';
+import { UsersService } from '../users/users.service';
 import { GroupsService } from './groups.service';
-import { SpecialGroup } from './groups.special';
 
 describe('GroupsService', () => {
+  const groupName = 'test_group';
+  const groupDisplayName = 'Test Group';
+  const groupId = 42;
+
   let service: GroupsService;
-  let groupRepo: Repository<Group>;
-  let group: Group;
+  let usersService: UsersService;
+  let tracker: Tracker;
+  let knexProvider: Provider;
 
   beforeAll(async () => {
+    [tracker, knexProvider] = mockKnexDb();
+
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        GroupsService,
-        {
-          provide: getRepositoryToken(Group),
-          useClass: Repository,
-        },
-      ],
+      providers: [UsersService, GroupsService, knexProvider],
       imports: [
-        ConfigModule.forRoot({
-          isGlobal: true,
-          load: [appConfigMock],
-        }),
         LoggerModule,
+        await ConfigModule.forRoot({
+          isGlobal: true,
+          load: [appConfigMock, databaseConfigMock],
+        }),
       ],
     }).compile();
 
     service = module.get<GroupsService>(GroupsService);
-    groupRepo = module.get<Repository<Group>>(getRepositoryToken(Group));
-    group = Group.create('testGroup', 'Superheros', false) as Group;
+    usersService = module.get<UsersService>(UsersService);
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+  afterEach(() => {
+    tracker.reset();
   });
 
   describe('createGroup', () => {
-    const groupName = 'testGroup';
-    const displayname = 'Group Test';
-    beforeEach(() => {
-      jest
-        .spyOn(groupRepo, 'save')
-        .mockImplementationOnce(async (group: Group): Promise<Group> => group);
+    it('inserts a new group', async () => {
+      mockInsert(tracker, TableGroup, [
+        FieldNameGroup.displayName,
+        FieldNameGroup.isSpecial,
+        FieldNameGroup.name,
+      ]);
+      await service.createGroup(groupName, groupDisplayName);
+      expectBindings(tracker, 'insert', [[groupDisplayName, false, groupName]]);
     });
-    it('successfully creates a group', async () => {
-      const user = await service.createGroup(groupName, displayname);
-      expect(user.name).toEqual(groupName);
-      expect(user.displayName).toEqual(displayname);
-    });
-    it('fails if group name is already taken', async () => {
-      // add additional mock implementation for failure
-      jest.spyOn(groupRepo, 'save').mockImplementationOnce(() => {
-        throw new Error();
-      });
-      // create first group with group name
-      await service.createGroup(groupName, displayname);
-      // attempt to create second group with group name
-      await expect(service.createGroup(groupName, displayname)).rejects.toThrow(
-        AlreadyInDBError,
-      );
+
+    it('throws AlreadyInDBError if group already exists', async () => {
+      tracker.on
+        .insert(
+          /^insert into "group" \("display_name", "is_special", "name"\) values .*/,
+        )
+        .simulateError('duplicate key value violates unique constraint');
+      await expect(
+        service.createGroup(groupName, groupDisplayName),
+      ).rejects.toThrow(AlreadyInDBError);
     });
   });
 
-  describe('getGroupByName', () => {
-    it('works', async () => {
-      jest.spyOn(groupRepo, 'findOne').mockResolvedValueOnce(group);
-      const foundGroup = await service.getGroupByName(group.name);
-      expect(foundGroup.name).toEqual(group.name);
-      expect(foundGroup.displayName).toEqual(group.displayName);
-      expect(foundGroup.special).toEqual(group.special);
+  describe('getGroupInfoDtoByName', () => {
+    it('returns group info if found', async () => {
+      const groupRow = {
+        [FieldNameGroup.name]: groupName,
+        [FieldNameGroup.displayName]: groupDisplayName,
+        [FieldNameGroup.isSpecial]: false,
+      };
+      mockSelect(tracker, [], TableGroup, FieldNameGroup.name, groupRow);
+      const result = await service.getGroupInfoDtoByName(groupName);
+      expect(result).toEqual({
+        name: groupName,
+        displayName: groupDisplayName,
+        isSpecial: false,
+      });
+      expectBindings(tracker, 'select', [[groupName]], true);
     });
-    it('fails with non-existing group', async () => {
-      jest.spyOn(groupRepo, 'findOne').mockResolvedValueOnce(null);
-      await expect(service.getGroupByName('i_dont_exist')).rejects.toThrow(
+
+    it('throws NotInDBError if group not found', async () => {
+      mockSelect(tracker, [], TableGroup, FieldNameGroup.name, undefined);
+      await expect(service.getGroupInfoDtoByName(groupName)).rejects.toThrow(
         NotInDBError,
       );
+      expectBindings(tracker, 'select', [[groupName]], true);
     });
   });
 
-  it('getEveryoneGroup return EVERYONE group', async () => {
-    const spy = jest.spyOn(service, 'getGroupByName').mockImplementation();
-    await service.getEveryoneGroup();
-    expect(spy).toHaveBeenCalledWith(SpecialGroup.EVERYONE);
-  });
-  it('getLoggedInGroup return LOGGED_IN group', async () => {
-    const spy = jest.spyOn(service, 'getGroupByName').mockImplementation();
-    await service.getLoggedInGroup();
-    expect(spy).toHaveBeenCalledWith(SpecialGroup.LOGGED_IN);
+  describe('getGroupIdByName', () => {
+    it('returns group id if found', async () => {
+      const groupRow = {
+        [FieldNameGroup.id]: groupId,
+      };
+      mockSelect(
+        tracker,
+        [FieldNameGroup.id],
+        TableGroup,
+        FieldNameGroup.name,
+        groupRow,
+      );
+      const result = await service.getGroupIdByName(groupName);
+      expect(result).toBe(groupId);
+      expectBindings(tracker, 'select', [[groupName]], true);
+    });
+
+    it('throws NotInDBError if group not found', async () => {
+      mockSelect(
+        tracker,
+        [FieldNameGroup.id],
+        TableGroup,
+        FieldNameGroup.name,
+        undefined,
+      );
+      await expect(service.getGroupIdByName(groupName)).rejects.toThrow(
+        NotInDBError,
+      );
+      expectBindings(tracker, 'select', [[groupName]], true);
+    });
   });
 
-  describe('toGroupDto', () => {
-    it('works', () => {
-      const groupDto = service.toGroupDto(group);
-      expect(groupDto.displayName).toEqual(group.displayName);
-      expect(groupDto.name).toEqual(group.name);
-      expect(groupDto.special).toBeFalsy();
+  describe('getGroupsForUser', () => {
+    const mockEveryoneGroup: Group = {
+      [FieldNameGroup.id]: 1,
+      [FieldNameGroup.name]: 'EVERYONE',
+      [FieldNameGroup.displayName]: 'Everyone',
+      [FieldNameGroup.isSpecial]: true,
+    };
+    const mockLoggedInGroup: Group = {
+      [FieldNameGroup.id]: 2,
+      [FieldNameGroup.name]: 'LOGGED_IN',
+      [FieldNameGroup.displayName]: 'Logged-in',
+      [FieldNameGroup.isSpecial]: true,
+    };
+    const mockUserGroup1: Group = {
+      [FieldNameGroup.id]: 3,
+      [FieldNameGroup.name]: 'mock',
+      [FieldNameGroup.displayName]: 'Mock',
+      [FieldNameGroup.isSpecial]: false,
+    };
+
+    beforeEach(() => {
+      mockSelect(
+        tracker,
+        [],
+        TableGroup,
+        FieldNameGroup.name,
+        mockEveryoneGroup,
+      );
+    });
+
+    it('returns EVERYONE, LOGGED_IN, and user groups for registered user', async () => {
+      mockSelect(
+        tracker,
+        [],
+        TableGroup,
+        FieldNameGroupUser.userId,
+        [mockUserGroup1],
+        [
+          {
+            joinTable: TableGroupUser,
+            keyLeft: FieldNameGroupUser.groupId,
+            keyRight: FieldNameGroup.id,
+          },
+        ],
+      );
+      jest.spyOn(usersService, 'isRegisteredUser').mockResolvedValueOnce(true);
+      mockSelect(
+        tracker,
+        [],
+        TableGroup,
+        FieldNameGroup.name,
+        mockLoggedInGroup,
+      );
+      const result = await service.getGroupsForUser(123);
+      expect(result).toEqual([
+        mockEveryoneGroup,
+        mockLoggedInGroup,
+        mockUserGroup1,
+      ]);
+    });
+
+    it('returns EVERYONE and user groups for unregistered user', async () => {
+      mockSelect(
+        tracker,
+        [],
+        TableGroup,
+        FieldNameGroupUser.userId,
+        [mockUserGroup1],
+        [
+          {
+            joinTable: TableGroupUser,
+            keyLeft: FieldNameGroupUser.groupId,
+            keyRight: FieldNameGroup.id,
+          },
+        ],
+      );
+      jest.spyOn(usersService, 'isRegisteredUser').mockResolvedValueOnce(false);
+      const result = await service.getGroupsForUser(123);
+      expect(result).toEqual([mockEveryoneGroup, mockUserGroup1]);
     });
   });
 });

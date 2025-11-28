@@ -1,8 +1,9 @@
 /*
- * SPDX-FileCopyrightText: 2024 The HedgeDoc developers (see AUTHORS file)
+ * SPDX-FileCopyrightText: 2025 The HedgeDoc developers (see AUTHORS file)
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
+import { MediaBackendType } from '@hedgedoc/commons';
 import { HttpAdapterHost } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { WsAdapter } from '@nestjs/platform-ws';
@@ -12,9 +13,9 @@ import { AuthConfig } from './config/auth.config';
 import { MediaConfig } from './config/media.config';
 import { ErrorExceptionMapping } from './errors/error-mapping';
 import { ConsoleLoggerService } from './logger/console-logger.service';
-import { BackendType } from './media/backends/backend-type.enum';
+import { runMigrations } from './migrate';
 import { SessionService } from './sessions/session.service';
-import { setupSpecialGroups } from './utils/createSpecialGroups';
+import { isDevMode } from './utils/dev-mode';
 import { setupSessionMiddleware } from './utils/session';
 import { setupValidationPipe } from './utils/setup-pipes';
 import { setupPrivateApiDocs, setupPublicApiDocs } from './utils/swagger';
@@ -29,28 +30,27 @@ export async function setupApp(
   mediaConfig: MediaConfig,
   logger: ConsoleLoggerService,
 ): Promise<void> {
+  logger.log('setupApp: start', 'AppBootstrap');
+  logger.log('setupApp: setting up public API docs...', 'AppBootstrap');
   await setupPublicApiDocs(app);
-  logger.log(
-    `Serving OpenAPI docs for public API under '/api/doc/v2'`,
-    'AppBootstrap',
-  );
-
-  if (process.env.NODE_ENV === 'development') {
+  if (isDevMode()) {
+    logger.log('setupApp: setting up private API docs...', 'AppBootstrap');
     await setupPrivateApiDocs(app);
-    logger.log(
-      `Serving OpenAPI docs for private API under '/api/doc/private'`,
-      'AppBootstrap',
-    );
   }
 
-  await setupSpecialGroups(app);
+  logger.log('setupApp: running database migrations...', 'AppBootstrap');
+  await runMigrations(app, logger);
 
+  // Setup session handling
+  logger.log('setupApp: configuring session middleware...', 'AppBootstrap');
   setupSessionMiddleware(
     app,
     authConfig,
-    app.get(SessionService).getTypeormStore(),
+    app.get(SessionService).getSessionStore(),
   );
 
+  // Enable web security aspects
+  logger.log('setupApp: enabling CORS...', 'AppBootstrap');
   app.enableCors({
     origin: appConfig.rendererBaseUrl,
   });
@@ -58,10 +58,17 @@ export async function setupApp(
     `Enabling CORS for '${appConfig.rendererBaseUrl}'`,
     'AppBootstrap',
   );
+  // TODO Add rate limiting (#442)
+  // TODO Add CSP (#1309)
+  // TODO Add common security headers and CSRF (#201)
 
+  // Setup class-validator for incoming API request data
+  logger.log('setupApp: registering validation pipes...', 'AppBootstrap');
   app.useGlobalPipes(setupValidationPipe(logger));
 
-  if (mediaConfig.backend.use === BackendType.FILESYSTEM) {
+  // Map URL paths to directories
+  logger.log('setupApp: configuring static assets...', 'AppBootstrap');
+  if (mediaConfig.backend.use === MediaBackendType.FILESYSTEM) {
     logger.log(
       `Serving the local folder '${mediaConfig.backend.filesystem.uploadPath}' under '/uploads'`,
       'AppBootstrap',
@@ -70,7 +77,6 @@ export async function setupApp(
       prefix: '/uploads/',
     });
   }
-
   logger.log(
     `Serving the local folder 'public' under '/public'`,
     'AppBootstrap',
@@ -78,9 +84,17 @@ export async function setupApp(
   app.useStaticAssets('public', {
     prefix: '/public/',
   });
+  // TODO Evaluate whether we really need this folder,
+  //  only use-cases for now are intro.md and motd.md which could be API endpoints as well
 
+  // Configure WebSocket and error message handling
+  logger.log('setupApp: configuring global filters and websocket adapter...', 'AppBootstrap');
   const { httpAdapter } = app.get(HttpAdapterHost);
-  app.useGlobalFilters(new ErrorExceptionMapping(httpAdapter));
+  app.useGlobalFilters(new ErrorExceptionMapping(logger, httpAdapter));
   app.useWebSocketAdapter(new WsAdapter(app));
+
+  // Enable hooks on app shutdown, like saving notes into the database
+  logger.log('setupApp: enabling shutdown hooks...', 'AppBootstrap');
   app.enableShutdownHooks();
+  logger.log('setupApp: done', 'AppBootstrap');
 }

@@ -3,7 +3,8 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only
  */
-import { ProviderType } from '@hedgedoc/commons';
+import { AuthProviderType } from '@hedgedoc/commons';
+import { FieldNameIdentity } from '@hedgedoc/database';
 import {
   Controller,
   Get,
@@ -18,10 +19,10 @@ import { ApiTags } from '@nestjs/swagger';
 
 import { IdentityService } from '../../../../auth/identity.service';
 import { OidcService } from '../../../../auth/oidc/oidc.service';
-import { RequestWithSession } from '../../../../auth/session.guard';
 import { ConsoleLoggerService } from '../../../../logger/console-logger.service';
 import { UsersService } from '../../../../users/users.service';
-import { OpenApi } from '../../../utils/openapi.decorator';
+import { OpenApi } from '../../../utils/decorators/openapi.decorator';
+import { RequestWithSession } from '../../../utils/request.type';
 
 @ApiTags('auth')
 @Controller('/auth/oidc')
@@ -38,16 +39,34 @@ export class OidcController {
   @Get(':oidcIdentifier')
   @Redirect()
   @OpenApi(201, 400, 401)
-  loginWithOpenIdConnect(
+  async loginWithOpenIdConnect(
     @Req() request: RequestWithSession,
     @Param('oidcIdentifier') oidcIdentifier: string,
-  ): { url: string } {
+  ): Promise<{ url: string }> {
     const code = this.oidcService.generateCode();
     const state = this.oidcService.generateState();
+    // Flatten session structure - store directly in session
     request.session.oidcLoginCode = code;
     request.session.oidcLoginState = state;
-    request.session.authProviderType = ProviderType.OIDC;
+    request.session.authProviderType = AuthProviderType.OIDC;
     request.session.authProviderIdentifier = oidcIdentifier;
+    // Force session save before redirect to ensure cookie is set
+    await new Promise<void>((resolve, reject) => {
+      if (request.session.save) {
+        request.session.save((err) => {
+          if (err) {
+            this.logger.error('Failed to save session: ' + String(err), undefined, 'loginWithOpenIdConnect');
+            reject(err);
+          } else {
+            this.logger.debug('Session saved for OIDC login', 'loginWithOpenIdConnect');
+            resolve();
+          }
+        });
+      } else {
+        this.logger.warn('Session save method not available', 'loginWithOpenIdConnect');
+        resolve();
+      }
+    });
     const authorizationUrl = this.oidcService.getAuthorizationUrl(
       oidcIdentifier,
       code,
@@ -64,16 +83,21 @@ export class OidcController {
     @Req() request: RequestWithSession,
   ): Promise<{ url: string }> {
     try {
+      this.logger.debug(`OIDC callback received for ${oidcIdentifier}`, 'callback');
+      this.logger.debug(`Session login code present: ${!!request.session.oidcLoginCode}`, 'callback');
+      
       const userInfo = await this.oidcService.extractUserInfoFromCallback(
         oidcIdentifier,
         request,
       );
       const oidcUserIdentifier = request.session.providerUserId;
       if (!oidcUserIdentifier) {
-        this.logger.log('No OIDC user identifier in callback', 'callback');
+        this.logger.error('No OIDC user identifier in callback', undefined, 'callback');
         throw new UnauthorizedException('No OIDC user identifier found');
       }
-      request.session.authProviderType = ProviderType.OIDC;
+      
+      this.logger.debug(`OIDC user identifier: ${oidcUserIdentifier}`, 'callback');
+      
       const identity = await this.oidcService.getExistingOidcIdentity(
         oidcIdentifier,
         oidcUserIdentifier,
@@ -81,28 +105,58 @@ export class OidcController {
       const mayUpdate = this.identityService.mayUpdateIdentity(oidcIdentifier);
 
       if (identity === null) {
+        this.logger.debug('No existing identity, redirecting to new-user', 'callback');
         request.session.newUserData = userInfo;
         return { url: '/new-user' };
       }
 
-      const user = await identity.user;
+      const userId = identity[FieldNameIdentity.userId];
+      this.logger.debug(`Found existing user: ${userId}`, 'callback');
+      
       if (mayUpdate) {
         await this.usersService.updateUser(
-          user,
+          userId,
           userInfo.displayName,
           userInfo.email,
           userInfo.photoUrl,
         );
       }
 
-      request.session.username = user.username;
+      request.session.userId = userId;
+      request.session.authProviderType = AuthProviderType.OIDC;
+      request.session.authProviderIdentifier = oidcIdentifier;
+      // Cleanup temporary OIDC data
+      request.session.oidcLoginCode = undefined;
+      request.session.oidcLoginState = undefined;
+      request.session.providerUserId = undefined;
+      request.session.newUserData = undefined;
+      
+      // Force session save before redirect to ensure login persists
+      await new Promise<void>((resolve, reject) => {
+        if (request.session.save) {
+          request.session.save((err) => {
+            if (err) {
+              this.logger.error('Failed to save session after login: ' + String(err), undefined, 'callback');
+              reject(err);
+            } else {
+              this.logger.debug('Session saved successfully after login', 'callback');
+              resolve();
+            }
+          });
+        } else {
+          this.logger.warn('Session save method not available', 'callback');
+          resolve();
+        }
+      });
+      
       return { url: '/' };
     } catch (error) {
       if (error instanceof HttpException) {
         throw error;
       }
-      this.logger.log(
+      this.logger.error(
         'Error during OIDC callback: ' + String(error),
+        error instanceof Error ? error.stack : undefined,
         'callback',
       );
       throw new InternalServerErrorException();

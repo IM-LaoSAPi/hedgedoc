@@ -5,11 +5,10 @@
  */
 import * as buildStateFromUpdatedMarkdownContentModule from '../build-state-from-updated-markdown-content'
 import type { NoteDetails } from '../types'
-import { buildStateFromServerDto } from './build-state-from-set-note-data-from-server'
+import { buildStateFromServerInterface } from './build-state-from-set-note-data-from-server'
 import { NoteTextDirection, NoteType } from '@hedgedoc/commons'
-import { DateTime } from 'luxon'
 import { Mock } from 'ts-mockery'
-import type { NoteDto } from '@hedgedoc/commons'
+import type { NoteInterface } from '@hedgedoc/commons'
 
 jest.mock('../build-state-from-updated-markdown-content')
 
@@ -29,19 +28,12 @@ describe('build state from set note data from server', () => {
   })
 
   it('builds a new state from the given note dto', () => {
-    const noteDto: NoteDto = {
+    const noteInterface: NoteInterface = {
       content: 'line1\nline2',
       metadata: {
-        primaryAddress: 'alias',
+        primaryAlias: 'alias',
         version: 5678,
-        aliases: [
-          {
-            noteId: 'id',
-            primaryAlias: true,
-            name: 'alias'
-          }
-        ],
-        id: 'id',
+        aliases: ['alias'],
         createdAt: '2012-05-25T09:08:34.123',
         description: 'description',
         editedBy: ['editedBy'],
@@ -60,11 +52,10 @@ describe('build state from set note data from server', () => {
             }
           ]
         },
-        viewCount: 987,
         tags: ['tag'],
         title: 'title',
         updatedAt: '2020-05-25T09:08:34.123',
-        updateUsername: 'updateusername'
+        lastUpdatedBy: 'updateusername'
       },
       editedByAtPosition: [
         {
@@ -107,19 +98,11 @@ describe('build state from set note data from server', () => {
       },
       firstHeading: '',
       rawFrontmatter: '',
-      id: 'id',
-      createdAt: DateTime.fromISO('2012-05-25T09:08:34.123').toSeconds(),
-      updatedAt: DateTime.fromISO('2020-05-25T09:08:34.123').toSeconds(),
-      updateUsername: 'updateusername',
-      viewCount: 987,
-      aliases: [
-        {
-          name: 'alias',
-          noteId: 'id',
-          primaryAlias: true
-        }
-      ],
-      primaryAddress: 'alias',
+      createdAt: '2012-05-25T09:08:34.123',
+      updatedAt: '2020-05-25T09:08:34.123',
+      lastUpdatedBy: 'updateusername',
+      aliases: ['alias'],
+      primaryAlias: 'alias',
       version: 5678,
       editedBy: ['editedBy'],
       permissions: {
@@ -139,7 +122,7 @@ describe('build state from set note data from server', () => {
       }
     }
 
-    const result = buildStateFromServerDto(noteDto)
+    const result = buildStateFromServerInterface(noteInterface)
     expect(result).toEqual(mockedNoteDetails)
     expect(buildStateFromUpdatedMarkdownContentMock).toHaveBeenCalledWith(convertedNoteDetails, 'line1\nline2')
   })
